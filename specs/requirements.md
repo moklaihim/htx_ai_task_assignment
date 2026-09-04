@@ -20,7 +20,10 @@ PDF's own Part numbers where applicable.
 - **REQ-0.5**: Backend source code SHALL be written in TypeScript running on Node.js,
   using Express.js as the web framework.
 - **REQ-0.6**: Frontend source code SHALL be written in TypeScript using React.
-- **REQ-0.7**: THE SYSTEM SHALL persist data in PostgreSQL.
+- **REQ-0.7**: THE frontend SHALL be a single-page application: navigation between
+  the Task List Page and the Task Creation Page SHALL occur client-side, without a
+  full browser page reload.
+- **REQ-0.8**: THE SYSTEM SHALL persist data in PostgreSQL.
 
 ## 1. Data Model (Part 1)
 
@@ -59,8 +62,9 @@ PDF's own Part numbers where applicable.
     assignee and respond `200` with the updated Task.
 - **REQ-2.5**: THE SYSTEM SHALL provide `PATCH /tasks/:id/status` to update a Task's
   status.
-  - IF the requested status is `Done` AND the Task has subtasks AND any subtask's
-    status is not `Done`, THE SYSTEM SHALL reject the request with `400`.
+  - IF the requested status is `Done` AND the Task has subtasks AND any subtask
+    beneath it, checked recursively to full depth, does not have status `Done`,
+    THE SYSTEM SHALL reject the request with `400` (see REQ-5.3).
   - OTHERWISE THE SYSTEM SHALL update the status and respond `200` with the updated Task.
 
 **Developers**
@@ -109,6 +113,13 @@ PDF's own Part numbers where applicable.
 - **REQ-4.4**: THE form SHALL NOT require an assignee at creation time.
 - **REQ-4.5**: WHEN the user submits the form, THE SYSTEM SHALL call `POST /tasks`
   and, on success, SHALL reflect the new Task on the Task List Page.
+- **REQ-4.6**: WHEN the `POST /tasks` response marks one or more nodes as
+  `skillInferenceFailed` (REQ-6.6), THE Task Creation Page SHALL display a
+  non-modal notification, auto-dismissing after a few seconds, informing the user
+  that automatic skill detection failed for the affected task(s) and that Skills
+  were left empty for them. THE affected Task(s) SHALL still be saved with an empty
+  Skills list, per REQ-6.4 — this notification is informational only and SHALL NOT
+  block or roll back the save.
 
 ## 5. Subtasks (Part 4)
 
@@ -147,15 +158,30 @@ This is the same page defined in REQ-4.1, extended — not a second, separate pa
 - **REQ-6.4**: IF the LLM call fails or returns an unparseable response, THE SYSTEM
   SHALL still create the Task with an empty Skills list, rather than failing the
   whole request.
-- **REQ-6.5**: Given the title "As a visitor, I want to see a responsive homepage so
-  that I can easily navigate on both desktop and mobile devices.", THE SYSTEM SHALL
-  infer `["Frontend"]`.
-- **REQ-6.6**: Given the title "As a system administrator, I want audit logs of all
-  data access and modifications so that I can ensure compliance with data protection
-  regulations and investigate any security incidents.", THE SYSTEM SHALL infer `["Backend"]`.
-- **REQ-6.7**: Given the title "As a logged-in user, I want to update my profile
-  information and upload a profile picture so that my account details are accurate
-  and personalized.", THE SYSTEM SHALL infer `["Frontend", "Backend"]`.
+- **REQ-6.5**: THE prompt sent to the LLM SHALL constrain its output to the fixed
+  Skill set (`Frontend`, `Backend`), permitting either or both to be returned for a
+  single title.
+
+  > Reference examples (PDF Part 5.1) — use these to design and manually verify the
+  > prompt; not strict pass/fail requirements, since LLM output for a given title is
+  > not guaranteed to be bit-for-bit deterministic:
+  > - "As a visitor, I want to see a responsive homepage so that I can easily
+  >   navigate on both desktop and mobile devices." → `Frontend`
+  > - "As a system administrator, I want audit logs of all data access and
+  >   modifications so that I can ensure compliance with data protection
+  >   regulations and investigate any security incidents." → `Backend`
+  > - "As a logged-in user, I want to update my profile information and upload a
+  >   profile picture so that my account details are accurate and personalized."
+  >   → `Frontend, Backend`
+- **REQ-6.6**: WHEN the LLM call fails or returns an unparseable response for a given
+  Task/subtask node, THE `POST /tasks` response SHALL mark that specific node with
+  an explicit indicator (e.g. `skillInferenceFailed: true`), distinguishing it from
+  any other case where a node's Skills end up empty.
+- **REQ-6.7**: Non-sensitive LLM configuration (base URL, model name) SHALL ship as
+  committed defaults so no reviewer action is needed for them. THE LLM API key SHALL
+  NOT be committed to the repository in any form — not in source, not in a
+  Dockerfile, not baked into a built image layer — and SHALL be supplied only at
+  container-start time via an environment variable.
 
 ## 7. Containerization (Part 6)
 
@@ -166,8 +192,26 @@ This is the same page defined in REQ-4.1, extended — not a second, separate pa
 - **REQ-7.4**: WHEN `docker-compose up` is run from a clean checkout with no manual
   setup beyond supplying an LLM API key, THE SYSTEM SHALL become fully operational:
   seeded data present, both pages reachable, all API operations functional.
+- **REQ-7.5**: THE repository SHALL provide a committed `.env.example` template
+  listing every required environment variable, including a placeholder for the LLM
+  API key. THE actual `.env` file SHALL be excluded via `.gitignore`. Populating or
+  changing the value in `.env` SHALL take effect on the next `docker-compose up`
+  WITHOUT requiring an image rebuild (i.e. no `--build` flag, no Dockerfile change).
 
-## 8. Out of Scope
+## 8. Documentation & Submission (Part 7)
+
+- **REQ-8.1**: THE repository SHALL contain a `README.md` documenting how to
+  configure and run the application, including the `.env` setup described in REQ-7.5.
+- **REQ-8.2**: THE README SHALL document the system design — data model, service
+  architecture, and how the frontend, backend, and database interact.
+- **REQ-8.3**: THE README SHALL document the API: every endpoint from Section 2,
+  with request shape, response shape, and status codes.
+- **REQ-8.4**: THE README SHALL justify each significant code library and dependency
+  chosen.
+- **REQ-8.5**: THE README SHALL restate the assumptions listed in Section 10, so a
+  reviewer can distinguish stated requirements from decisions made to fill gaps.
+
+## 9. Out of Scope
 
 Not covered, because the source PDF doesn't request them:
 - Authentication / authorization — no login is described anywhere in the source document.
@@ -176,7 +220,7 @@ Not covered, because the source PDF doesn't request them:
 - Deleting Tasks or Developers.
 - Multiple assignees per Task.
 
-## 9. Assumptions
+## 10. Assumptions
 
 Everything below is a real decision I made where the PDF left a gap. Each should be
 restated in the README so it's clear what was assumed versus explicitly required.
@@ -194,5 +238,11 @@ restated in the README so it's clear what was assumed versus explicitly required
    creation time — not `null`, not an omitted field.
 6. **LLM failure handling** — not specified by the PDF; REQ-6.4 defines a safe
    fallback (create with empty skills rather than fail the request).
-7. **Subtasks inherit all Task behavior**, including their own independent LLM skill
-   inference, since Part 4.1 states subtasks have "the same properties as a Task."
+7. **Subtasks are treated as full Tasks in their own right** — same title field, same
+   optional skills field, same LLM classification path. A subtask's required skills
+   are inferred from *its own* title, standalone, per REQ-6.1. A subtask never
+   copies or inherits skills from its parent Task's skills.
+8. **Task List "..." column** — the PDF's Task List wireframe shows an unlabelled
+   "..." column between Skills and Status. This is read as an indication that further
+   Task attributes *may* be displayed, not as a requirement for any specific
+   additional column. No extra column is implemented.
