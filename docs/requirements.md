@@ -24,6 +24,10 @@ PDF's own Part numbers where applicable.
   the Task List Page and the Task Creation Page SHALL occur client-side, without a
   full browser page reload.
 - **REQ-0.8**: THE SYSTEM SHALL persist data in PostgreSQL.
+- **REQ-0.9**: THE SYSTEM SHALL include automated tests covering, at minimum: the
+  skill-matching rule (REQ-1.8), the recursive Done rule (REQ-5.3), and an
+  end-to-end browser run of task creation, assignment, and status update against
+  the running stack.
 
 ## 1. Data Model (Part 1)
 
