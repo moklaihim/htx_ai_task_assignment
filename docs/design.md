@@ -232,27 +232,37 @@ an error.
 ### 3.4 Seed data (REQ-1.9)
 
 ```sql
+-- 1. Skills
 INSERT INTO skills (name) VALUES ('Frontend'), ('Backend')
   ON CONFLICT (name) DO NOTHING;
 
-WITH seeded(name, skill) AS (VALUES
-  ('Alice','Frontend'), ('Bob','Backend'),
-  ('Carol','Frontend'), ('Carol','Backend'), ('Dave','Backend')
-), devs AS (
-  INSERT INTO developers (name)
-  SELECT DISTINCT name FROM seeded
-  WHERE NOT EXISTS (SELECT 1 FROM developers d WHERE d.name = seeded.name)
-  RETURNING id, name
-)
+-- 2. Developers
+INSERT INTO developers (name)
+SELECT v.name
+FROM (VALUES ('Alice'), ('Bob'), ('Carol'), ('Dave')) AS v(name)
+WHERE NOT EXISTS (SELECT 1 FROM developers d WHERE d.name = v.name);
+
+-- 3. Developer ↔ Skill links
 INSERT INTO developer_skills (developer_id, skill_id)
 SELECT d.id, s.id
-FROM seeded
-JOIN developers d ON d.name = seeded.name
-JOIN skills     s ON s.name = seeded.skill
+FROM (VALUES
+  ('Alice','Frontend'), ('Bob','Backend'),
+  ('Carol','Frontend'), ('Carol','Backend'), ('Dave','Backend')
+) AS v(dev_name, skill_name)
+JOIN developers d ON d.name = v.dev_name
+JOIN skills     s ON s.name = v.skill_name
 ON CONFLICT DO NOTHING;
 ```
 
-The seed is idempotent — `ON CONFLICT DO NOTHING` plus the existence check means
+**These must be three separate statements, not one statement with CTEs.** In
+Postgres, a data-modifying CTE is not visible to the rest of the same statement —
+every part sees the snapshot from before the statement started. Written as one
+statement, step 3's `JOIN developers` would see the table as it was *before* step 2
+inserted anything, match zero rows on a fresh database, and silently insert no
+skill links at all. Run as separate statements, each one sees the effects of the
+previous.
+
+The seed is idempotent — `ON CONFLICT DO NOTHING` plus the `NOT EXISTS` check means
 running it against an already-seeded database changes nothing. This matters because
 `docker-compose up` may run more than once against the same volume (REQ-7.4), and
 plain `INSERT`s would either duplicate developers or fail on the second run.
@@ -260,6 +270,13 @@ plain `INSERT`s would either duplicate developers or fail on the second run.
 **Triggered by** `db/seed.ts` — a few lines that read `seed.sql` and execute it
 against the same `pg` Pool `migrate.ts` uses. Invoked from `entrypoint.sh`, right
 after migrations, as shown in 3.3.
+
+**Both `migrate.ts` and `seed.ts` export a callable function** (`runMigrations(pool)`,
+`runSeed(pool)`) and only run themselves when executed directly as a script. The
+integration tests in 8.2 need to prepare a disposable database in a setup hook, and
+they cannot shell out to a container to do it — they import and call these functions
+against a test pool. Without this split the same SQL would have to be duplicated in
+test fixtures, which is exactly how test and production schemas drift apart.
 
 ---
 
@@ -460,7 +477,16 @@ GROUP BY tree.id, tree.title, tree.status, tree.parent_task_id, d.id, d.name;
 query, so there is no second round trip and no N+1. `COALESCE(…, '[]')` turns a task
 with no skills into an empty array rather than `[null]`.
 
-Assembling the rows into a forest:
+**Row mapping.** With no ORM, nothing converts column names automatically: `pg`
+returns keys exactly as the database names them, so a row arrives as
+`{ id, title, status, parent_task_id, assignee_id, assignee_name, skills }`. A small
+`toTaskRow(row)` function in `src/db/` maps each row to the camelCase shape the rest
+of the code and the API contract use, and folds `assignee_id`/`assignee_name` into
+the nested `assignee` object (or `null`). Every query result passes through it, so
+column naming stays confined to the `db/` layer rather than leaking into services and
+routes.
+
+Assembling the rows into a forest, once rows are mapped:
 
 ```ts
 function buildForest(rows: TaskRow[]): TaskNode[] {
@@ -515,6 +541,7 @@ would not form a transaction.
 | `LLM_BASE_URL` | yes | non-sensitive |
 | `LLM_MODEL` | yes (`gemini-2.0-flash`) | non-sensitive |
 | `LLM_TIMEOUT_MS` | yes (`10000`) | non-sensitive |
+| `LLM_MODE` | yes (`live`) | `live` \| `stub` \| `fail` — see 5.4 |
 | `LLM_API_KEY` | **no** | supplied via `.env` at container start |
 
 Read once at startup into a typed config object. If `LLM_API_KEY` is missing the
@@ -747,6 +774,8 @@ services:
       - DATABASE_URL=postgresql://...@db:5432/...
       - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
       - LLM_MODEL=${LLM_MODEL:-gemini-2.0-flash}
+      - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-10000}
+      - LLM_MODE=${LLM_MODE:-live}
       - LLM_API_KEY=${LLM_API_KEY}
     depends_on:
       db: { condition: service_healthy }
@@ -870,11 +899,18 @@ Detailed in `tasks.md`; the boundaries below are what that document expands on.
 |---|---|---|---|
 | 1 | Skeleton: three services, health checks | 1, 7.1 | REQ-0.1–0.4, 7.3 |
 | 2 | Schema, migration runner, seed | 3 | REQ-1.1–1.10 |
-| 3 | Task/Developer/Skill endpoints | 4.1, 4.2, 4.4 | REQ-2.1–2.8 |
+| 3 | Task/Developer/Skill endpoints, flat (no nesting yet) | 4.1, 4.2, 4.4 | REQ-2.2–2.4, 2.6–2.8; REQ-2.1 and 2.5 partially |
 | 4 | Task List + Creation pages | 6.1, 6.2, 6.4, 6.5 | REQ-3.1–3.6, 4.1–4.5 |
-| 5 | Subtasks: tree create/read, Done rule, recursive form | 4.3–4.5, 6.3 | REQ-5.1–5.7 |
+| 5 | Subtasks: tree create/read, Done rule, recursive form | 4.3–4.5, 6.3 | REQ-5.1–5.7; completes REQ-2.1, 2.5 |
 | 6 | LLM inference, failure flag, notification | 5 | REQ-6.1–6.7, 4.6 |
 | 7 | E2E suite, final containerization, `.env`, README | 7, 8.3, 2 | REQ-7.1–7.5, 8.1–8.5, 0.9 |
+
+Two requirements are delivered across two phases, which is deliberate. **REQ-2.1**
+(`POST /tasks`) is built in phase 3 accepting title and skills only; phase 5 adds the
+recursive `subtasks` array. **REQ-2.5** (`PATCH /status`) is built in phase 3 with no
+subtask check, since no task can have subtasks yet; phase 5 adds the recursive Done
+rule. Neither is finished until phase 5, and the phase-5 exit check must re-verify
+both rather than assuming phase 3 settled them.
 
 Unit and integration tests are written within the phase that introduces the code they
 cover, not deferred to phase 7. Only the browser-level e2e suite waits, since it needs
