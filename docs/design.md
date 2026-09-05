@@ -391,8 +391,17 @@ on each node. Its three possible states:
 | `skills` | `skillInferenceFailed` | Meaning |
 |---|---|---|
 | non-empty | field absent | Skills were supplied by the user, or inferred successfully |
-| `[]` | field absent | User supplied none and the LLM legitimately returned none |
-| `[]` | `true` | The LLM call was attempted and failed (REQ-6.4) |
+| `[]` | field absent | Skills were supplied by the user as an explicit empty list — not reachable in the shipped build, since an empty `skillIds` always triggers inference |
+| `[]` | `true` | Inference was attempted and did not yield any seeded skill (REQ-6.4) |
+
+**Implementation (phase 6).** The middle row was originally written as "the LLM
+legitimately returned none". Phase 6 made that state a *failure* instead, per §5.3's
+"JSON with no valid skill names": a response of `{"skills":[]}`, or one naming only
+skills that aren't seeded, leaves the task exactly as unclassified as a network error
+does, and REQ-6.1's promise is that a task created without skills gets some. Reporting
+one silently and the other with a toast would draw a distinction the user cannot act
+on. The row is kept in the table because it remains the correct reading of the
+response shape — a client must not assume an empty `skills` implies the flag.
 
 Without this field the last two rows would be indistinguishable — both are an empty
 `skills` array — and the frontend would have no way to know whether to show the
