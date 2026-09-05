@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { getAllTaskRows, getTaskTreeRows, insertFlatTask, updateTaskAssignee } from '../db/tasks.js';
+import { getAllTaskRows, getTaskTreeRows, insertFlatTask, updateTaskAssignee, updateTaskStatus } from '../db/tasks.js';
 import { findMissingSkillIds } from '../db/skills.js';
 import { getDeveloperById } from '../db/developers.js';
 import { buildForest } from '../services/buildForest.js';
 import { developerCanBeAssigned } from '../services/developerCanBeAssigned.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../errors/AppError.js';
-import { assignTaskSchema, createTaskSchema } from '../schemas/task.js';
+import { assignTaskSchema, createTaskSchema, updateTaskStatusSchema } from '../schemas/task.js';
 
 export const tasksRouter: Router = Router();
 
@@ -109,6 +109,37 @@ tasksRouter.patch(
     }
 
     await updateTaskAssignee(pool, id, assigneeId);
+
+    const updatedRows = await getTaskTreeRows(pool, id);
+    const [updated] = buildForest(updatedRows);
+    res.status(200).json(updated);
+  }),
+);
+
+// REQ-2.5 (partial) — no subtask/`SUBTASKS_NOT_DONE` check yet; nothing can
+// have subtasks until phase 5 (design §4.3 is implemented then).
+tasksRouter.patch(
+  '/tasks/:id/status',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      throw AppError.validation(`Invalid task id: ${req.params.id}`);
+    }
+
+    const parsed = updateTaskStatusSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const message = parsed.error.issues.map((issue) => issue.message).join('; ');
+      throw AppError.validation(message);
+    }
+    const { status } = parsed.data;
+
+    const existingRows = await getTaskTreeRows(pool, id);
+    const task = existingRows.find((row) => row.id === id);
+    if (!task) {
+      throw AppError.notFound(`No task with id ${id}`);
+    }
+
+    await updateTaskStatus(pool, id, status);
 
     const updatedRows = await getTaskTreeRows(pool, id);
     const [updated] = buildForest(updatedRows);

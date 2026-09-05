@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { TaskRow } from '../types/task.js';
+import type { TaskRow, TaskStatus } from '../types/task.js';
 import { toTaskRow, type DbTaskRow } from './mapping.js';
 
 // Shared by both queries below (design §4.4): given whichever set of root rows
@@ -69,6 +69,15 @@ export async function updateTaskAssignee(
   assigneeId: number | null,
 ): Promise<void> {
   await pool.query('UPDATE tasks SET assignee_id = $2 WHERE id = $1', [id, assigneeId]);
+}
+
+/**
+ * Sets a task's status (`PATCH /tasks/:id/status`, REQ-2.5 — partial: the
+ * caller is responsible for the recursive Done-rule check once subtasks exist
+ * (phase 5); this function performs the write only.
+ */
+export async function updateTaskStatus(pool: Pool, id: number, status: TaskStatus): Promise<void> {
+  await pool.query('UPDATE tasks SET status = $2 WHERE id = $1', [id, status]);
 }
 
 /**

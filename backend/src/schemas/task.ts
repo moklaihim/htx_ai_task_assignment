@@ -24,3 +24,17 @@ export const assignTaskSchema = z.object({
 });
 
 export type AssignTaskRequest = z.infer<typeof assignTaskSchema>;
+
+/**
+ * `PATCH /tasks/:id/status` request body (design §4.1, REQ-2.5 — partial: no
+ * subtask/`SUBTASKS_NOT_DONE` check yet, since nothing can have subtasks
+ * until phase 5). `z.enum` rejects any value outside the three statuses
+ * REQ-1.6 fixes, matching the database's own `task_status` ENUM.
+ */
+export const updateTaskStatusSchema = z.object({
+  status: z.enum(['To-do', 'In Progress', 'Done'], {
+    message: 'status must be one of: To-do, In Progress, Done',
+  }),
+});
+
+export type UpdateTaskStatusRequest = z.infer<typeof updateTaskStatusSchema>;
