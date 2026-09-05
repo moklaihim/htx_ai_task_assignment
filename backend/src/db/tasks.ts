@@ -57,3 +57,38 @@ export async function getTaskTreeRows(pool: Pool, id: number): Promise<TaskRow[]
   );
   return rows.map(toTaskRow);
 }
+
+/**
+ * Inserts a single, flat task (no subtasks — that arrives in phase 5) and its
+ * `task_skills` rows in one transaction, so a failure part-way (e.g. a bad
+ * skill id that slipped past validation) leaves neither behind. Returns the
+ * new task's id; callers re-read the full row via `getTaskTreeRows` to reuse
+ * the same mapping/shape as every other endpoint (design §4.5).
+ */
+export async function insertFlatTask(pool: Pool, title: string, skillIds: number[]): Promise<number> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query<{ id: number }>(
+      'INSERT INTO tasks (title) VALUES ($1) RETURNING id',
+      [title],
+    );
+    const taskId = rows[0]!.id;
+
+    for (const skillId of skillIds) {
+      await client.query('INSERT INTO task_skills (task_id, skill_id) VALUES ($1, $2)', [
+        taskId,
+        skillId,
+      ]);
+    }
+
+    await client.query('COMMIT');
+    return taskId;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
