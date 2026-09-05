@@ -1,8 +1,11 @@
-import type { TaskNode } from '../types';
+import type { Developer, TaskNode } from '../types';
 import { SkillTags } from './SkillTags';
+import { AssigneeControl } from './AssigneeControl';
 
 interface Props {
   task: TaskNode;
+  developers: Developer[];
+  onTaskUpdated: (updated: TaskNode) => void;
   depth?: number;
 }
 
@@ -11,7 +14,7 @@ interface Props {
  * indented under their parent (design §6.2), though nothing has subtasks yet
  * in this phase (phase 4 is flat tasks only; nesting lands in phase 5).
  */
-export function TaskRow({ task, depth = 0 }: Props) {
+export function TaskRow({ task, developers, onTaskUpdated, depth = 0 }: Props) {
   return (
     <>
       <tr data-testid="task-row">
@@ -22,10 +25,18 @@ export function TaskRow({ task, depth = 0 }: Props) {
           <SkillTags skills={task.skills} />
         </td>
         <td data-testid="task-status">{task.status}</td>
-        <td data-testid="task-assignee">{task.assignee?.name ?? 'Unassigned'}</td>
+        <td data-testid="task-assignee">
+          <AssigneeControl task={task} developers={developers} onTaskUpdated={onTaskUpdated} />
+        </td>
       </tr>
       {task.subtasks.map((subtask) => (
-        <TaskRow key={subtask.id} task={subtask} depth={depth + 1} />
+        <TaskRow
+          key={subtask.id}
+          task={subtask}
+          developers={developers}
+          onTaskUpdated={onTaskUpdated}
+          depth={depth + 1}
+        />
       ))}
     </>
   );

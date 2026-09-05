@@ -1,8 +1,14 @@
-import type { TaskNode } from '../types';
+import type { Developer, TaskNode } from '../types';
 import { TaskRow } from './TaskRow';
 
+interface Props {
+  tasks: TaskNode[];
+  developers: Developer[];
+  onTaskUpdated: (updated: TaskNode) => void;
+}
+
 /** The Task List Page's table (REQ-3.1), one row per top-level Task. */
-export function TaskTable({ tasks }: { tasks: TaskNode[] }) {
+export function TaskTable({ tasks, developers, onTaskUpdated }: Props) {
   return (
     <table>
       <thead>
@@ -15,7 +21,7 @@ export function TaskTable({ tasks }: { tasks: TaskNode[] }) {
       </thead>
       <tbody>
         {tasks.map((task) => (
-          <TaskRow key={task.id} task={task} />
+          <TaskRow key={task.id} task={task} developers={developers} onTaskUpdated={onTaskUpdated} />
         ))}
       </tbody>
     </table>
