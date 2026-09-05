@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
+COPY db ./db
 RUN npm run build
 
 # Runtime stage — no compiler, production dependencies only
