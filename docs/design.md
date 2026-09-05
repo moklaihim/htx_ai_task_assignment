@@ -738,6 +738,19 @@ skill name is dropped rather than created — the skill set is fixed at
 `Frontend`/`Backend`, and letting the model invent skills would corrupt the
 matching rule in 4.2.
 
+**Implementation (phase 6).** `src/llm/prompt.ts` holds the text above
+(`buildPrompt(title)`), with the three examples written as single unwrapped lines —
+the line breaks in the block above are only this document's column width, and
+feeding them to the model would put newlines inside the example titles.
+`src/llm/geminiClient.ts` `POST`s it to
+`{baseUrl}/v1beta/models/{model}:generateContent` with `temperature: 0`, since
+classification wants the most likely answer every time rather than variety. The API
+key travels in an `x-goog-api-key` header rather than the `?key=` query parameter
+Google's quickstart uses: a URL ends up in access logs and error messages, and the
+key must not (REQ-6.7). The configured timeout is enforced with an `AbortController`,
+not merely awaited — `fetch` has no default deadline, so a hung connection would
+otherwise keep the whole `POST /tasks` request waiting indefinitely.
+
 ### 5.3 Failure handling (REQ-6.4, REQ-6.6, REQ-4.6)
 
 Treated as failures: network error, non-2xx, timeout, unparseable JSON, JSON with no
