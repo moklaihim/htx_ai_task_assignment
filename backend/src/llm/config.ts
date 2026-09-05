@@ -19,7 +19,7 @@ export type LlmMode = 'live' | 'stub' | 'fail';
 export interface LlmConfig {
   /** Gemini API origin, no trailing slash. */
   baseUrl: string;
-  /** Model id, e.g. `gemini-2.0-flash`. */
+  /** Model id, e.g. `gemini-3.5-flash`. */
   model: string;
   /** Per-call deadline in milliseconds; the client aborts the request at this point. */
   timeoutMs: number;
@@ -35,7 +35,7 @@ const LLM_MODES: readonly LlmMode[] = ['live', 'stub', 'fail'];
 
 const DEFAULTS = {
   baseUrl: 'https://generativelanguage.googleapis.com',
-  model: 'gemini-2.0-flash',
+  model: 'gemini-3.5-flash',
   timeoutMs: 10_000,
   mode: 'live' as LlmMode,
 };

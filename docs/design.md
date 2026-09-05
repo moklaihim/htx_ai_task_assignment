@@ -691,7 +691,7 @@ calls for a `400 VALIDATION_ERROR`.
 | Variable | Committed default | Notes |
 |---|---|---|
 | `LLM_BASE_URL` | yes | non-sensitive |
-| `LLM_MODEL` | yes (`gemini-2.0-flash`) | non-sensitive |
+| `LLM_MODEL` | yes (`gemini-3.5-flash`) | non-sensitive |
 | `LLM_TIMEOUT_MS` | yes (`10000`) | non-sensitive |
 | `LLM_MODE` | yes (`live`) | `live` \| `stub` \| `fail` — see 5.4 |
 | `LLM_API_KEY` | **no** | supplied via `.env` at container start |
@@ -700,6 +700,15 @@ Read once at startup into a typed config object. If `LLM_API_KEY` is missing the
 backend still boots — every inference attempt then fails and falls back per REQ-6.4,
 so a reviewer who forgets the key gets a working app with a clear notification
 rather than a container that won't start.
+
+**Implementation (phase 6).** `LLM_MODEL` was originally defaulted to
+`gemini-2.0-flash`. The live verification in 6.9 found that model retired — the API
+answers `404 … is no longer available` for it — which made the committed default
+useless and quietly turned every task into the REQ-6.4 failure case, exactly the
+reviewer-action-required situation REQ-6.7 exists to prevent. The default is now
+`gemini-3.5-flash`, verified against all three PDF reference titles. A `…-latest`
+alias would age better but pins nothing, so two reviewers could see different
+classifications from the same checkout.
 
 The remaining environment variables are not LLM-related but belong in the same
 `.env.example` template (REQ-7.5), all with committed defaults:
@@ -759,6 +768,18 @@ Google's quickstart uses: a URL ends up in access logs and error messages, and t
 key must not (REQ-6.7). The configured timeout is enforced with an `AbortController`,
 not merely awaited — `fetch` has no default deadline, so a hung connection would
 otherwise keep the whole `POST /tasks` request waiting indefinitely.
+
+**Manual verification (task 6.9, REQ-6.5).** Run in `live` mode against
+`gemini-3.5-flash`, the three PDF reference titles classify as the PDF states —
+`Frontend`, `Backend`, and `Frontend, Backend` respectively. Since those same titles
+are the prompt's few-shot examples, three *unseen* paraphrases were checked alongside
+them ("product grid to reflow on small screens" → `Frontend`; "nightly database
+backups retained for 30 days" → `Backend`; "filter my orders by date range … without
+a page reload" → `Frontend, Backend`), all correct, which is what shows the prompt
+generalises rather than echoing its examples. Gemini intermittently answers `503 …
+experiencing high demand`; that is handled as an ordinary failure (5.3) rather than
+retried, since the fallback already keeps task creation working and a retry loop
+would multiply the latency of the very request the user is waiting on.
 
 ### 5.3 Failure handling (REQ-6.4, REQ-6.6, REQ-4.6)
 
@@ -1056,7 +1077,7 @@ services:
       - PORT=4000
       - DATABASE_URL=${DATABASE_URL:-postgresql://app:app@db:5432/taskdb}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
-      - LLM_MODEL=${LLM_MODEL:-gemini-2.0-flash}
+      - LLM_MODEL=${LLM_MODEL:-gemini-3.5-flash}
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-10000}
       - LLM_MODE=${LLM_MODE:-live}
       - LLM_API_KEY=${LLM_API_KEY}
