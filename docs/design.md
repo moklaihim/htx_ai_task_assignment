@@ -793,14 +793,15 @@ App
     └── SaveButton
 ```
 
-**Implementation (phase 4).** Phase 4 is flat tasks only, so `TaskCreationPage`
-renders a plain title `<input>` and `SkillMultiSelect` directly rather than
-`TaskFormNode` — the recursive form node arrives in phase 5 once subtasks exist,
-and `SkillMultiSelect` is written now so phase 5 can reuse it unchanged inside
-`TaskFormNode` (see §6.3's snippet, which already assumes it). "Save" is a plain
-`<button type="submit">` inside the form rather than a separate `SaveButton`
-component — it holds no state of its own beyond the surrounding form's, so a
-dedicated component would only add a file with no behavior in it.
+**Implementation (phase 4, superseded in phase 5).** Phase 4 was flat tasks only, so
+`TaskCreationPage` rendered a plain title `<input>` and `SkillMultiSelect` directly,
+with `SkillMultiSelect` written so phase 5 could reuse it unchanged inside
+`TaskFormNode`. **Phase 5 replaced that** with the recursive `TaskFormNode` and a
+single `DraftNode` tree in `useState`, as §6.3 describes; `SkillMultiSelect` was
+indeed reused unmodified. "Save" is a plain `<button type="submit">` inside the form
+rather than a separate `SaveButton` component — it holds no state of its own beyond
+the surrounding form's, so a dedicated component would only add a file with no
+behavior in it.
 
 `Toaster` is a module-level publish/subscribe store (`toast.success`/`toast.error`
 functions plus a `Toaster` component that subscribes to them) rather than a React
@@ -868,7 +869,12 @@ type DraftNode = {
 ```
 
 `localId` exists because nodes need stable React `key`s before the server has
-assigned real `id`s. It is stripped before sending.
+assigned real `id`s. It is stripped before sending, by `toCreateTaskInput`, which is
+the *only* transformation submit performs — the draft shape is otherwise already the
+request body, which is what keeps the whole tree to one `POST` (REQ-5.7). Verified in
+the browser against the running stack: building a four-node, three-level tree and
+clicking Save issues exactly one `POST /api/tasks`, whose body is the full nested
+structure with per-node `skillIds` and no `localId` anywhere.
 
 **Adding a subtask** (REQ-5.5) walks the tree to the node with the matching
 `localId` and appends to *that node's* `subtasks` array — not the root's. This is
