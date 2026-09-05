@@ -1203,6 +1203,19 @@ exist until phases 5 and 6:
 - LLM in `stub` mode → empty `skillIds` gets filled; in `fail` mode → task still
   created, `skillInferenceFailed: true` present.
 
+**Implementation (phase 6).** `LLM_MODE` is per *file*, not per test: `src/llm/config.ts`
+reads the environment once at module load, so a file selects its mode by setting
+`process.env.LLM_MODE` before importing the harness — hence one file per mode
+(`tasksLlmStub`, `tasksLlmFail`, and `tasksLlmNoKey` for `live` with the key removed,
+the state a reviewer who never edits `.env` lands in). `startTestServer` defaults the
+mode to `fail` when a file hasn't chosen one, so no test can accidentally reach Gemini,
+spend quota, or behave differently depending on whether the machine running it happens
+to have `LLM_API_KEY` exported (REQ-0.9). Under that default a node created without
+skills keeps the empty `skills` array the phase-3 and phase-5 tests were written
+against; the one assertion that needed changing was the phase-5 "a fresh read agrees
+with the POST response" deep equality, which now drops the response-only
+`skillInferenceFailed` field before comparing — a `GET` must not carry it (§4.1).
+
 ### 8.3 End-to-end (Playwright)
 
 Runs a real browser against the full docker-compose stack, with `LLM_MODE` set per

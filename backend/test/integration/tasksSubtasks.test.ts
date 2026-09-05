@@ -8,6 +8,8 @@ interface TaskDto {
   parentTaskId: number | null;
   skills: { id: number; name: string }[];
   subtasks: TaskDto[];
+  /** Present only on `POST /tasks` responses (design §4.1, REQ-6.6). */
+  skillInferenceFailed?: boolean;
 }
 
 interface ErrorDto {
@@ -17,6 +19,12 @@ interface ErrorDto {
 // Seeded skill ids (db/seed.sql): Frontend=1, Backend=2.
 const FRONTEND = 1;
 const BACKEND = 2;
+
+/** A POST response tree with the response-only `skillInferenceFailed` markers removed. */
+function withoutInferenceFlags(task: TaskDto): TaskDto {
+  const { skillInferenceFailed: _ignored, ...rest } = task;
+  return { ...rest, subtasks: task.subtasks.map(withoutInferenceFlags) };
+}
 
 describe('nested create and the recursive Done rule (5.6, REQ-0.9, REQ-2.1, REQ-5.3, REQ-5.7)', () => {
   let server: TestServer;
@@ -90,7 +98,13 @@ describe('nested create and the recursive Done rule (5.6, REQ-0.9, REQ-2.1, REQ-
 
       // …and a fresh read agrees with it, so the nesting is stored, not just
       // echoed back from the request body.
-      expect(await get(root.id)).toEqual(root);
+      //
+      // Phase 6 note: the POST response additionally carries the response-only
+      // `skillInferenceFailed` marker (design §4.1) on nodes the LLM could not
+      // classify — under the test harness's default `fail` mode, "Child A" and
+      // "Child B". That field describes this request, not the stored task, so a
+      // GET must *not* have it and the comparison drops it.
+      expect(await get(root.id)).toEqual(withoutInferenceFlags(root));
     });
 
     it('gives every node a status and an assignee, exactly as a top-level task has (REQ-5.2)', async () => {
