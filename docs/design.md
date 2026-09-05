@@ -414,6 +414,17 @@ Example of a node where inference failed:
 }
 ```
 
+**Implementation (phase 5).** The recursive `subtasks` array is expressed with
+`z.lazy` in `src/schemas/task.ts` — a `z.object({...})` literal cannot reference the
+const it is being assigned to, so the self-reference is deferred to parse time, with
+an explicit `z.ZodType<CreateTaskRequest, z.ZodTypeDef, CreateTaskInput>` annotation
+because TypeScript cannot infer a type defined in terms of itself. One schema applied
+at every level is what makes a malformed node rejected at *any* depth. Validation
+messages are built by `formatValidationIssues`, which prefixes each issue with its
+path (`subtasks.0.subtasks.1.title: title must not be empty`) — without the path, a
+failure deep inside a tree would report only "title must not be empty" and leave the
+caller no way to tell which node was bad.
+
 **Error shape**, consistent across all endpoints:
 
 ```json

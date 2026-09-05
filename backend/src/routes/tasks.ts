@@ -7,7 +7,12 @@ import { buildForest } from '../services/buildForest.js';
 import { developerCanBeAssigned } from '../services/developerCanBeAssigned.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../errors/AppError.js';
-import { assignTaskSchema, createTaskSchema, updateTaskStatusSchema } from '../schemas/task.js';
+import {
+  assignTaskSchema,
+  createTaskSchema,
+  formatValidationIssues,
+  updateTaskStatusSchema,
+} from '../schemas/task.js';
 
 export const tasksRouter: Router = Router();
 
@@ -45,8 +50,7 @@ tasksRouter.post(
   asyncHandler(async (req, res) => {
     const parsed = createTaskSchema.safeParse(req.body);
     if (!parsed.success) {
-      const message = parsed.error.issues.map((issue) => issue.message).join('; ');
-      throw AppError.validation(message);
+      throw AppError.validation(formatValidationIssues(parsed.error));
     }
 
     const { title, skillIds } = parsed.data;
@@ -76,8 +80,7 @@ tasksRouter.patch(
 
     const parsed = assignTaskSchema.safeParse(req.body);
     if (!parsed.success) {
-      const message = parsed.error.issues.map((issue) => issue.message).join('; ');
-      throw AppError.validation(message);
+      throw AppError.validation(formatValidationIssues(parsed.error));
     }
     const { assigneeId } = parsed.data;
 
@@ -128,8 +131,7 @@ tasksRouter.patch(
 
     const parsed = updateTaskStatusSchema.safeParse(req.body);
     if (!parsed.success) {
-      const message = parsed.error.issues.map((issue) => issue.message).join('; ');
-      throw AppError.validation(message);
+      throw AppError.validation(formatValidationIssues(parsed.error));
     }
     const { status } = parsed.data;
 
