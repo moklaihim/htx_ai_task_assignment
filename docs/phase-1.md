@@ -38,7 +38,7 @@ Important Notes is checked against.
 | 1.9 | Write `.env.example` with every variable from design §5.1 plus `DATABASE_URL`. Create local `.env`. | REQ-7.5 | — |
 
 **Exit check**
-- [ ] `docker-compose up` from a clean clone brings all three services up
+- [ ] `docker compose up` from a clean clone brings all three services up
 - [ ] `http://localhost:3000` renders and shows a healthy backend response
 - [ ] `/health/db` returns 200, proving the backend reached Postgres through the compose network
 - [ ] Stopping the db container makes `/health/db` return 503, not crash the backend

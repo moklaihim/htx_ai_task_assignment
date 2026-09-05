@@ -11,7 +11,7 @@ PDF's own Part numbers where applicable.
 
 - **REQ-0.1**: THE SYSTEM SHALL consist of three independently deployable services:
   frontend, backend, and database.
-- **REQ-0.2**: THE SYSTEM SHALL be fully startable via a single `docker-compose up`
+- **REQ-0.2**: THE SYSTEM SHALL be fully startable via a single `docker compose up`
   command from a clean checkout.
 - **REQ-0.3**: THE backend SHALL expose `GET /health`, returning 200 when the process
   is running.
@@ -193,13 +193,13 @@ This is the same page defined in REQ-4.1, extended — not a second, separate pa
 - **REQ-7.2**: THE SYSTEM SHALL provide a Dockerfile for the backend service.
 - **REQ-7.3**: THE SYSTEM SHALL provide a `docker-compose.yml` starting frontend,
   backend, and Postgres together, with the backend waiting on Postgres being ready.
-- **REQ-7.4**: WHEN `docker-compose up` is run from a clean checkout with no manual
+- **REQ-7.4**: WHEN `docker compose up` is run from a clean checkout with no manual
   setup beyond supplying an LLM API key, THE SYSTEM SHALL become fully operational:
   seeded data present, both pages reachable, all API operations functional.
 - **REQ-7.5**: THE repository SHALL provide a committed `.env.example` template
   listing every required environment variable, including a placeholder for the LLM
   API key. THE actual `.env` file SHALL be excluded via `.gitignore`. Populating or
-  changing the value in `.env` SHALL take effect on the next `docker-compose up`
+  changing the value in `.env` SHALL take effect on the next `docker compose up`
   WITHOUT requiring an image rebuild (i.e. no `--build` flag, no Dockerfile change).
 
 ## 8. Documentation & Submission (Part 7)

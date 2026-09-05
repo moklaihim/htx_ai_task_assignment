@@ -23,7 +23,7 @@ Postgres, no `npm install` on the host.
 git clone <repo-url>
 cd htx_ai_task_assignment
 cp .env.example .env      # then paste the provided LLM_API_KEY into it
-docker-compose up
+docker compose up
 ```
 
 Open **http://localhost:3000**. The Task List Page shows four seeded developers
@@ -32,11 +32,11 @@ Open **http://localhost:3000**. The Task List Page shows four seeded developers
 That's the entire setup. No database to create by hand, no migration command, no
 seed command, no build step: the backend's `entrypoint.sh` runs the migration
 runner, then the idempotent seed, then the server, in that order, every time the
-`backend` container starts (safe to repeat — a second `docker-compose up` against
+`backend` container starts (safe to repeat — a second `docker compose up` against
 the same volume is a no-op). Anything beyond the four commands above would be a
 defect.
 
-**Changing the LLM key or mode later** — edit `.env` and run `docker-compose up`
+**Changing the LLM key or mode later** — edit `.env` and run `docker compose up`
 again (no `--build`). The key and `LLM_MODE` are container *environment* values, not
 build arguments, so a new value takes effect on the next start with no rebuild and
 is never baked into an image layer.
@@ -119,7 +119,7 @@ external HTTP dependency:
 ├── docs/                     # requirements.md, design.md, phase-N.md
 ├── e2e/                      # Playwright specs against the compose stack
 │   ├── playwright.config.ts
-│   ├── helpers/              # shared locators + docker-compose LLM_MODE control
+│   ├── helpers/              # shared locators + Docker Compose LLM_MODE control
 │   └── specs/
 ├── backend/
 │   ├── Dockerfile             # multi-stage: compile, then a production-only runtime
@@ -349,7 +349,7 @@ Docker. Everything below is a real choice, with the alternative that was rejecte
 | **Vite** | Fast dev server, first-class TS + React templates, builds to static files nginx serves directly. | Create React App (no longer maintained) |
 | **React Router** | Client-side navigation between the two pages, satisfying the single-page-application requirement. | Conditional rendering on state — works, but no URLs, no back button |
 | **Vitest** | One test runner for both halves of the repo. On the frontend it reuses the existing Vite config, so TS handling and path aliases are already correct with no second build setup. On the backend it runs TypeScript tests with no separate transform step. | Jest — needs its own TS toolchain configured; `node:test` — no extra dependency, but a separate runner from the frontend's, so two ways of writing tests in one repo |
-| **Playwright** | End-to-end coverage through a real browser against the running docker-compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
+| **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
 | **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, avoiding CORS configuration entirely. | Serving the SPA from Express (mixes concerns, loses static-file caching) |
 | **Gemini** | Free tier, following the PDF's own suggestion, for LLM skill inference. | — |
 
@@ -371,7 +371,7 @@ Three layers, each covering what the layer below cannot:
   every endpoint's success and error paths, including the recursive Done rule and
   all three `LLM_MODE`s.
 - **End-to-end** (`e2e/`, Playwright) — a real browser against the full
-  docker-compose stack. Run with:
+  Docker Compose stack. Run with:
 
   ```
   cd e2e
@@ -380,7 +380,7 @@ Three layers, each covering what the layer below cannot:
   npm test
   ```
 
-  Requires the stack already running (`docker-compose up -d` from the repo root).
+  Requires the stack already running (`docker compose up -d` from the repo root).
   Eight scenarios (E2E-1 through E2E-8) cover task creation, assignment,
   status updates, arbitrarily deep subtask trees, the recursive Done rule, and
   both LLM outcomes (`stub` success, `fail` fallback) — the last two are run by

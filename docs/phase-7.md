@@ -34,13 +34,13 @@ Important Notes is checked against.
 | 7.2 | Write E2E-1 to E2E-6 from design §8.3. | REQ-0.9 | — |
 | 7.3 | Write E2E-7 and E2E-8 with `LLM_MODE` set per scenario. | REQ-0.9 | No live LLM call, no quota use |
 | 7.4 | Review both Dockerfiles: multi-stage, production-only dependencies at runtime, `db/` and `entrypoint.sh` present in the backend image. | REQ-7.1, 7.2 | — |
-| 7.5 | Confirm `.env.example` lists every variable the app reads, and that changing `LLM_API_KEY` needs no rebuild. | REQ-7.5 | Change key → `docker-compose up` → new key in use |
+| 7.5 | Confirm `.env.example` lists every variable the app reads, and that changing `LLM_API_KEY` needs no rebuild. | REQ-7.5 | Change key → `docker compose up` → new key in use |
 | 7.6 | README: setup and run, architecture, data model, API reference, library justifications from design §2, and the assumptions from `requirements.md` §10. | REQ-8.1–8.5 | — |
 | 7.7 | Full clean-clone rehearsal into an empty directory, following only the README. | REQ-7.4 | Exactly the four commands in design §7.3 |
 
 **Exit check**
 - [ ] All eight e2e scenarios pass against a freshly built stack
-- [ ] Clean clone → `cp .env.example .env` → paste key → `docker-compose up` → working app, no fifth step
+- [ ] Clean clone → `cp .env.example .env` → paste key → `docker compose up` → working app, no fifth step
 - [ ] `git log` shows incremental commits across all seven phases
 - [ ] `git grep -i` for the API key across all history finds nothing
 - [ ] Every requirement in `requirements.md` is demonstrably satisfied

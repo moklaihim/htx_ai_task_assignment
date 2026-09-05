@@ -114,7 +114,7 @@ Everything below is a real choice, with the reasoning REQ-8.4 asks to be documen
 | **Vite** | Fast dev server, first-class TS + React templates, builds to static files that nginx serves directly. | Create React App (no longer maintained) |
 | **React Router** | Client-side navigation between the two pages, satisfying the SPA requirement (REQ-0.7). | Conditional rendering on state — works, but no URLs, no back button |
 | **Vitest** | One test runner for both halves of the repo. On the frontend it reuses the existing Vite config, so TS handling and path aliases are already correct with no second build setup. On the backend the benefit is narrower and worth stating plainly: it runs TypeScript tests without a separate transform step. | Jest — needs its own TS toolchain configured; `node:test` — no extra dependency, but a separate runner from the frontend's, so two ways of writing tests in one repo |
-| **Playwright** | End-to-end coverage through a real browser against the running docker-compose stack, which is the only way to verify things like "the Update button is disabled until the value changes" (REQ-3.4). Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
+| **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack, which is the only way to verify things like "the Update button is disabled until the value changes" (REQ-3.4). Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
 | **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, which avoids CORS configuration entirely. | Serving the SPA from Express (mixes concerns, loses static-file caching) |
 
 **Not used: Supertest.** Integration tests start the Express app in a setup hook and
@@ -252,7 +252,7 @@ by a seed attempt against a schema that isn't there. This script is the only pla
 migrations run; there is no separate manual step and no `npm run migrate` a reviewer
 needs to remember. It runs every time the `backend` container starts, which is what
 makes 3.3's idempotency guarantee load-bearing rather than incidental — a second
-`docker-compose up` re-triggers the same three steps against the same volume, and
+`docker compose up` re-triggers the same three steps against the same volume, and
 the migration table plus `ON CONFLICT` clauses are what make that a no-op instead of
 an error.
 
@@ -304,7 +304,7 @@ previous.
 
 The seed is idempotent — `ON CONFLICT DO NOTHING` plus the `NOT EXISTS` check means
 running it against an already-seeded database changes nothing. This matters because
-`docker-compose up` may run more than once against the same volume (REQ-7.4), and
+`docker compose up` may run more than once against the same volume (REQ-7.4), and
 plain `INSERT`s would either duplicate developers or fail on the second run.
 
 **Triggered by** `db/seed.ts` — a few lines that read `seed.sql` and execute it
@@ -1102,7 +1102,7 @@ the backend would crash on its first query.
 `${VAR:-default}` supplies committed defaults for non-sensitive settings while
 leaving `LLM_API_KEY` with no default, so it must come from `.env` (REQ-6.7, REQ-7.5).
 Because these are container *environment* values rather than build arguments,
-changing the key takes effect on the next `docker-compose up` with no rebuild — and
+changing the key takes effect on the next `docker compose up` with no rebuild — and
 the key is never baked into an image layer.
 
 The published frontend port is `${FRONTEND_PORT:-3000}` rather than a hard-coded
@@ -1141,7 +1141,7 @@ at that path and return 404.
 The backend entrypoint runs, in order: the migration runner (3.3), then the
 idempotent seed (3.4), then the server. Both steps are safe to repeat, so restarting
 a container against an existing volume is a no-op rather than an error — verified by
-`docker-compose restart backend`, after which the runner reports no pending
+`docker compose restart backend`, after which the runner reports no pending
 migrations and the developer and skill-link counts are unchanged.
 
 The `/health/db` check (REQ-0.4) opens a pooled connection and runs `SELECT 1`,
@@ -1157,7 +1157,7 @@ reviewer's entire setup is:
 git clone <repo>
 cd <repo>
 cp .env.example .env      # then paste the provided LLM_API_KEY into it
-docker-compose up
+docker compose up
 ```
 
 and then opening `http://localhost:3000` shows a working app with Alice, Bob, Carol
@@ -1240,7 +1240,7 @@ with the POST response" deep equality, which now drops the response-only
 
 ### 8.3 End-to-end (Playwright)
 
-Runs a real browser against the full docker-compose stack, with `LLM_MODE` set per
+Runs a real browser against the full Docker Compose stack, with `LLM_MODE` set per
 scenario. These cover the interaction rules that no API test can reach.
 
 | ID | Scenario | Verifies |

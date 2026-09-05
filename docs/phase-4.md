@@ -52,7 +52,7 @@ own success/error toasts.
 - [ ] Create a task on `/tasks/new`; it appears on the list with the skills chosen
 - [ ] The assignee dropdown on a Frontend-only task offers Alice and Carol but not Bob
 - [ ] The Update button is disabled until a different value is selected, and the dropdown locks while the request is in flight
-- [ ] Both pages work through `docker-compose up`, not only in the Vite dev server
+- [ ] Both pages work through `docker compose up`, not only in the Vite dev server
 - [ ] Any deviation from design.md during this phase is reflected back into design.md
 - [ ] Merge back to main: `git checkout main && git merge --no-ff phase-4-frontend`
 - [ ] Tag: `git tag phase-4-frontend`

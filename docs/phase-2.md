@@ -37,9 +37,9 @@ Important Notes is checked against.
 | 2.6 | Write `src/db/mapping.ts` with `toTaskRow(row)` per design §4.4 — snake_case columns to camelCase, `assignee_id`/`assignee_name` folded into a nested object or `null`. | — | Unit-testable in isolation |
 
 **Exit check**
-- [ ] `docker-compose down -v && docker-compose up` produces a schema with all five tables
+- [ ] `docker compose down -v && docker compose up` produces a schema with all five tables
 - [ ] Alice, Bob, Carol, Dave exist with **exactly** the skills in REQ-1.9 — query `developer_skills` and confirm five rows, not zero (this is the bug design §3.4 warns about)
-- [ ] `docker-compose restart backend` re-runs migrate and seed with no error and no duplicate rows
+- [ ] `docker compose restart backend` re-runs migrate and seed with no error and no duplicate rows
 - [ ] Inserting a task with an invalid status is rejected by the database
 - [ ] Any deviation from design.md during this phase is reflected back into design.md
 - [ ] Merge back to main: `git checkout main && git merge --no-ff phase-2-database`
