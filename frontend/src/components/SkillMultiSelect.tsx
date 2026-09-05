@@ -17,14 +17,16 @@ export function SkillMultiSelect({ skills, selected, onChange }: Props) {
   }
 
   return (
-    <fieldset>
+    <fieldset className="skills-fieldset">
       <legend>Skills</legend>
-      {skills.map((skill) => (
-        <label key={skill.id} style={{ display: 'block' }}>
-          <input type="checkbox" checked={selected.includes(skill.id)} onChange={() => toggle(skill.id)} />
-          {skill.name}
-        </label>
-      ))}
+      <div className="skill-options">
+        {skills.map((skill) => (
+          <label key={skill.id} className="skill-option">
+            <input type="checkbox" checked={selected.includes(skill.id)} onChange={() => toggle(skill.id)} />
+            {skill.name}
+          </label>
+        ))}
+      </div>
     </fieldset>
   );
 }

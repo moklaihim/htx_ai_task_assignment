@@ -66,34 +66,14 @@ export function Toaster() {
   }
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        position: 'fixed',
-        top: '1rem',
-        right: '1rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.5rem',
-        zIndex: 1000,
-      }}
-    >
+    <div role="status" aria-live="polite" className="toaster">
       {items.map((item) => (
         <div
           key={item.id}
+          className={`toast toast--${item.kind}`}
           data-testid="toast"
           data-kind={item.kind}
           onClick={() => dismiss(item.id)}
-          style={{
-            padding: '0.75rem 1rem',
-            borderRadius: 4,
-            color: 'white',
-            background: item.kind === 'error' ? '#c0392b' : '#2e7d32',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
-            cursor: 'pointer',
-            minWidth: 220,
-          }}
         >
           {item.message}
         </div>

@@ -11,6 +11,14 @@ interface Props {
 
 const STATUSES: TaskStatus[] = ['To-do', 'In Progress', 'Done'];
 
+/** Modifier for the status dot, which colors the *saved* status — the
+ * dropdown can hold an unsaved selection, the dot never does. */
+const DOT_MODIFIER: Record<TaskStatus, string> = {
+  'To-do': '',
+  'In Progress': ' status-dot--in-progress',
+  Done: ' status-dot--done',
+};
+
 /**
  * Dropdown + Update button pair, one per Task row (REQ-3.5). Same
  * three-state pattern as `AssigneeControl` (design §6.4, REQ-3.6). Unlike the
@@ -42,8 +50,10 @@ export function StatusControl({ task, onTaskUpdated }: Props) {
   }
 
   return (
-    <span style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+    <span className="control-pair">
+      <span className={`status-dot${DOT_MODIFIER[task.status]}`} aria-hidden="true" />
       <select
+        className="select"
         aria-label={`Status for ${task.title}`}
         disabled={saving}
         value={selected}
@@ -55,7 +65,7 @@ export function StatusControl({ task, onTaskUpdated }: Props) {
           </option>
         ))}
       </select>
-      <button disabled={!dirty || saving} onClick={submit}>
+      <button className="btn btn--secondary btn--sm" disabled={!dirty || saving} onClick={submit}>
         {saving ? 'Saving…' : 'Update'}
       </button>
     </span>

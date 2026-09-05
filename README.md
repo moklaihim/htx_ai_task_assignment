@@ -145,6 +145,7 @@ external HTTP dependency:
     ├── Dockerfile               # multi-stage: vite build, then nginx runtime
     ├── nginx.conf                # serves the SPA, proxies /api, SPA fallback routing
     └── src/
+        ├── styles.css             # the whole design system: tokens + component classes
         ├── api/                  # typed fetch wrappers, one file per resource
         ├── types/                # hand-kept mirror of backend/src/types
         ├── lib/                   # pure helpers (tree building, draft state)
@@ -352,6 +353,16 @@ Docker. Everything below is a real choice, with the alternative that was rejecte
 | **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
 | **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, avoiding CORS configuration entirely. | Serving the SPA from Express (mixes concerns, loses static-file caching) |
 | **Gemini** | Free tier, following the PDF's own suggestion, for LLM skill inference. | — |
+
+**Not used: a CSS or component library.** The UI is two pages of tables, form
+fields and buttons — elements the platform already provides. A component library
+(MUI, Chakra) would add a design system, a theming layer and a peer-dependency
+tree to restyle them, and Tailwind would add a build step and put the same
+tokens in every `className` instead of one place. Instead, `frontend/src/styles.css`
+is a single stylesheet: a `:root` token block (palette, radius, type, shadows)
+and component classes that consume it, so the palette and spacing scale each
+have exactly one definition. Only layout that depends on runtime data — the
+indent of a subtask row by its tree depth — stays inline in the components.
 
 **Not used: Supertest.** Integration tests start the Express app in a setup hook
 and call it with Node's built-in global `fetch`. Supertest would only wrap that in

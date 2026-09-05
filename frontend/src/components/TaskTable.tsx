@@ -16,26 +16,28 @@ interface Props {
  */
 export function TaskTable({ tasks, developers, onTaskUpdated }: Props) {
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>Title</th>
-          <th>Skills</th>
-          <th>Status</th>
-          <th>Assignee</th>
-        </tr>
-      </thead>
-      <tbody>
-        {tasks.map((task, index) => (
-          <TaskRow
-            key={task.id}
-            task={task}
-            developers={developers}
-            onTaskUpdated={onTaskUpdated}
-            outline={String(index + 1)}
-          />
-        ))}
-      </tbody>
-    </table>
+    <div className="panel panel__scroll">
+      <table className="task-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Skills</th>
+            <th>Status</th>
+            <th>Assignee</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map((task, index) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              developers={developers}
+              onTaskUpdated={onTaskUpdated}
+              outline={String(index + 1)}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
