@@ -59,14 +59,21 @@ depends on: a key shipped to the browser would be readable by anyone using the a
 │   │   ├── migrate.ts        # ~40-line runner, applies migrations/*.sql
 │   │   ├── seed.sql          # idempotent data (REQ-1.9)
 │   │   └── seed.ts           # thin runner: reads seed.sql, executes it via `pg`
-│   └── src/
-│       ├── index.ts          # process entry — reads PORT, calls listen()
-│       ├── app.ts            # createApp(): builds the Express app, no listen()
-│       ├── db/               # pg Pool + query helpers
-│       ├── routes/           # HTTP layer: parse, validate, respond
-│       ├── services/         # business rules (skill match, Done rule, tree build)
-│       ├── llm/              # Gemini client + prompt
-│       └── types/            # shared TS types
+│   ├── src/
+│   │   ├── index.ts          # process entry — reads PORT, calls listen()
+│   │   ├── app.ts            # createApp(): builds the Express app, no listen()
+│   │   ├── db/               # pg Pool + query helpers
+│   │   ├── routes/           # HTTP layer: parse, validate, respond
+│   │   ├── schemas/          # Zod request schemas (4.1)
+│   │   ├── services/         # business rules (skill match, Done rule, tree build)
+│   │   ├── errors/           # AppError — the four codes as static factories (4.1)
+│   │   ├── middleware/        # errorHandler, asyncHandler (4.1)
+│   │   ├── llm/               # Gemini client + prompt
+│   │   └── types/             # shared TS types
+│   └── test/
+│       ├── unit/              # pure functions, no database (8.1)
+│       ├── integration/       # Express app + disposable Postgres, via fetch (8.2)
+│       └── helpers/           # testDatabase.ts, testServer.ts — the harness itself
 └── frontend/
     ├── Dockerfile
     ├── .dockerignore
@@ -415,6 +422,19 @@ Codes: `VALIDATION_ERROR`, `NOT_FOUND`, `SKILL_MISMATCH`, `SUBTASKS_NOT_DONE`.
 A machine-readable `code` lets the frontend branch on the failure type; the `message`
 is what gets shown to the user.
 
+**Implementation.** `src/errors/AppError.ts` pairs each code with the HTTP status
+that goes with it (`AppError.notFound(msg)`, `.validation(msg)`, `.skillMismatch(msg)`,
+`.subtasksNotDone(msg)`), so a route just `throw`s rather than building the response
+body itself. Routes are wrapped in `asyncHandler` (`src/middleware/errorHandler.ts`),
+which forwards a rejected promise to `next(err)` — Express 4 does not await handlers,
+so an un-caught rejection would otherwise become an unhandled rejection instead of a
+response. A single `errorHandler`, registered last, turns any `AppError` into
+`{error:{code,message}}` with its status, and anything else into a `500` with the
+same shape, so the contract holds even for a bug that wasn't anticipated. A catch-all
+route registered just before it turns an unmatched path into `404 NOT_FOUND` rather
+than Express's default HTML page, so the shape is consistent even off the documented
+routes.
+
 ### 4.2 Skill matching (REQ-1.8, REQ-2.4)
 
 Assignment is allowed only when the developer's skills are a **superset** of the
@@ -543,7 +563,42 @@ the fetched set, so it correctly becomes the root of the returned tree.
 At take-home scale this is comfortably fast. If the table grew large, `GET /tasks`
 would need pagination over root tasks — noted as a known limit, not built.
 
+**Implementation split.** `src/db/tasks.ts` exposes this as two functions rather
+than one parameterized query — `getAllTaskRows(pool)` anchored on
+`parent_task_id IS NULL` (`GET /tasks`) and `getTaskTreeRows(pool, id)` anchored on
+`id = $1` (`GET /tasks/:id`) — since the two anchors need different `WHERE` clauses
+and only one takes a parameter; both share the same `SELECT … FROM tree` fragment
+shown above. `buildForest` itself lives in `src/services/buildForest.ts`, alongside
+the other pure business rules (4.2, 4.3), not in `db/`.
+
+**`GET /developers` uses a different shape of query.** A developer has *two*
+independent one-to-many relations off the same row — skills and assigned tasks —
+so the join-plus-`GROUP BY` pattern above would cross-multiply every skill against
+every assigned task. `src/db/developers.ts` instead pulls each into its own JSON
+array with a correlated subquery:
+
+```sql
+SELECT d.id, d.name,
+  COALESCE((SELECT json_agg(json_build_object('id', s.id, 'name', s.name))
+            FROM developer_skills ds JOIN skills s ON s.id = ds.skill_id
+            WHERE ds.developer_id = d.id), '[]') AS skills,
+  COALESCE((SELECT json_agg(json_build_object('id', t.id, 'title', t.title, 'status', t.status))
+            FROM tasks t WHERE t.assignee_id = d.id), '[]') AS assigned_tasks
+FROM developers d;
+```
+
+Still one round trip, still `COALESCE`d to `[]`, just two independent subqueries
+instead of one join — the right tool once there is more than one child relation to
+aggregate per row.
+
 ### 4.5 Creating a tree (REQ-2.1, REQ-5.7)
+
+**Phase 3 implements a flat subset of this** (3.5): `POST /tasks` accepts only
+`title` and `skillIds` — no `subtasks`, no LLM inference — so steps 1–3 below and the
+recursive insert in step 4 do not apply yet. `insertFlatTask` (`src/db/tasks.ts`)
+still opens one transaction for its two writes (`INSERT INTO tasks`, then each
+`INSERT INTO task_skills`), so a bad skill id slipping past validation can't leave a
+task row with no skills behind. The full recursive version below is built in phase 5.
 
 The whole tree is created inside **one database transaction**, so a failure part-way
 leaves nothing behind rather than a half-built tree:
@@ -926,12 +981,43 @@ Pure functions, no database, no network:
 The Express app is started in a setup hook against a real Postgres (a disposable
 database, migrated and seeded per run). Tests call it with Node's global `fetch`.
 
+**The harness** (`backend/test/helpers/`, built in 3.9). `testDatabase.ts` connects
+to Postgres's own `postgres` maintenance database — same host/user/password as
+`DATABASE_URL`, only the database name swapped — to `CREATE DATABASE` a uniquely
+named, empty database per call, and to `DROP DATABASE` it afterwards (terminating
+any lingering backends first, since Postgres refuses to drop a database still in
+use). `testServer.ts` points `DATABASE_URL` at that database *before* dynamically
+`import()`-ing `src/db/pool.ts`, `db/migrate.ts`, `db/seed.ts` and `src/app.ts` — the
+pool is opened as a module-load side effect, so importing it any earlier would bind
+to whatever `DATABASE_URL` happened to be set to first. It then runs
+`runMigrations`/`runSeed` and calls `app.listen(0)` for an ephemeral port. Each
+integration test file calls this once in a top-level `beforeAll`; Vitest resets the
+module registry between test files, so each file's dynamic imports are independent
+even when files run concurrently. No Docker is required — only a reachable Postgres
+server (REQ-0.9) — so this also runs against a plain local `postgresql@16` install,
+not just the compose `db` service.
+
+Phase 3 (3.10) covers what phase 3 actually implements — flat tasks, no subtasks,
+no LLM:
+
+- `GET /skills`, `GET /developers`, `GET /developers/:id` → seeded data back, `404`
+  on an unknown developer.
+- `GET /tasks`, `GET /tasks/:id` → top-level only, skills arrays populated (never
+  `[null]`), `404` on an unknown id.
+- `POST /tasks` with an invalid body (empty title, unknown skill id) → `400`, and no
+  row written.
+- `PATCH /assign`: Bob → Frontend-only task → `400 SKILL_MISMATCH`; Carol → same →
+  `200`; a task with no required skills accepts any developer; `assigneeId: null`
+  unassigns; unknown task/developer id → `404`.
+- `PATCH /status` → each of the three valid statuses succeeds; a value outside the
+  enum → `400 VALIDATION_ERROR`; unknown task id → `404`.
+
+The remaining scenarios below need subtasks and LLM inference, neither of which
+exist until phases 5 and 6:
+
 - `POST /tasks` with a nested body → all nodes created with correct `parent_task_id`.
-- `POST /tasks` with an invalid body → `400`, and no rows written.
-- `PATCH /assign`: Bob → Frontend task → `400 SKILL_MISMATCH`; Carol → same → `200`.
 - `PATCH /status` → `Done` with a `To-do` grandchild → `400 SUBTASKS_NOT_DONE`;
   after the grandchild is `Done`, the same call → `200`.
-- `GET /tasks` → top-level only, subtasks nested, skills arrays populated.
 - LLM in `stub` mode → empty `skillIds` gets filled; in `fail` mode → task still
   created, `skillInferenceFailed: true` present.
 
