@@ -1,6 +1,7 @@
 import type { Developer, TaskNode } from '../types';
 import { SkillTags } from './SkillTags';
 import { AssigneeControl } from './AssigneeControl';
+import { StatusControl } from './StatusControl';
 
 interface Props {
   task: TaskNode;
@@ -24,7 +25,9 @@ export function TaskRow({ task, developers, onTaskUpdated, depth = 0 }: Props) {
         <td data-testid="task-skills">
           <SkillTags skills={task.skills} />
         </td>
-        <td data-testid="task-status">{task.status}</td>
+        <td data-testid="task-status">
+          <StatusControl task={task} onTaskUpdated={onTaskUpdated} />
+        </td>
         <td data-testid="task-assignee">
           <AssigneeControl task={task} developers={developers} onTaskUpdated={onTaskUpdated} />
         </td>
