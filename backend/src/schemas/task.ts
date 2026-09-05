@@ -14,3 +14,13 @@ export const createTaskSchema = z.object({
 });
 
 export type CreateTaskRequest = z.infer<typeof createTaskSchema>;
+
+/**
+ * `PATCH /tasks/:id/assign` request body (design §4.1, REQ-2.4). `assigneeId`
+ * is nullable so the same endpoint unassigns a task by passing `null`.
+ */
+export const assignTaskSchema = z.object({
+  assigneeId: z.number().int('assigneeId must be an integer').nullable(),
+});
+
+export type AssignTaskRequest = z.infer<typeof assignTaskSchema>;

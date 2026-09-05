@@ -59,6 +59,19 @@ export async function getTaskTreeRows(pool: Pool, id: number): Promise<TaskRow[]
 }
 
 /**
+ * Sets (or clears, when `assigneeId` is `null`) a task's assignee (`PATCH
+ * /tasks/:id/assign`, REQ-2.4). The caller is responsible for having already
+ * validated the skill match — this function performs the write only.
+ */
+export async function updateTaskAssignee(
+  pool: Pool,
+  id: number,
+  assigneeId: number | null,
+): Promise<void> {
+  await pool.query('UPDATE tasks SET assignee_id = $2 WHERE id = $1', [id, assigneeId]);
+}
+
+/**
  * Inserts a single, flat task (no subtasks — that arrives in phase 5) and its
  * `task_skills` rows in one transaction, so a failure part-way (e.g. a bad
  * skill id that slipped past validation) leaves neither behind. Returns the
