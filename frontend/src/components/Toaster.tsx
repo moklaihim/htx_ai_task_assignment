@@ -1,0 +1,103 @@
+import { useEffect, useState } from 'react';
+
+type ToastKind = 'success' | 'error';
+interface ToastItem {
+  id: number;
+  kind: ToastKind;
+  message: string;
+}
+
+type Listener = (toasts: ToastItem[]) => void;
+
+const AUTO_DISMISS_MS = 4000;
+
+// Module-level store rather than React context: any component can call
+// `toast.success`/`toast.error` without being wrapped in a provider, matching
+// the component tree in design §6.2 where `Toaster` is a plain sibling of the
+// pages, not a wrapper around them.
+let toasts: ToastItem[] = [];
+let nextId = 0;
+const listeners = new Set<Listener>();
+
+function emit() {
+  for (const listener of listeners) listener(toasts);
+}
+
+function dismiss(id: number) {
+  toasts = toasts.filter((item) => item.id !== id);
+  emit();
+}
+
+function push(kind: ToastKind, message: string) {
+  const id = nextId++;
+  toasts = [...toasts, { id, kind, message }];
+  emit();
+  setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
+}
+
+/**
+ * Imperative API for raising a toast from anywhere (design §6.2). This task
+ * (4.3) builds the mechanism only, with no message wired to it yet — the
+ * assignee/status controls (4.5–4.7) and the phase-6 LLM failure notice
+ * (REQ-4.6) are the callers.
+ */
+export const toast = {
+  success: (message: string) => push('success', message),
+  error: (message: string) => push('error', message),
+};
+
+/**
+ * Non-modal (fixed-position overlay, doesn't block the page), auto-dismissing
+ * (task 4.3 acceptance), stacking (renders every active toast) notification
+ * surface. Mount once at the app root.
+ */
+export function Toaster() {
+  const [items, setItems] = useState<ToastItem[]>(toasts);
+
+  useEffect(() => {
+    listeners.add(setItems);
+    return () => {
+      listeners.delete(setItems);
+    };
+  }, []);
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        position: 'fixed',
+        top: '1rem',
+        right: '1rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem',
+        zIndex: 1000,
+      }}
+    >
+      {items.map((item) => (
+        <div
+          key={item.id}
+          data-testid="toast"
+          data-kind={item.kind}
+          onClick={() => dismiss(item.id)}
+          style={{
+            padding: '0.75rem 1rem',
+            borderRadius: 4,
+            color: 'white',
+            background: item.kind === 'error' ? '#c0392b' : '#2e7d32',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
+            cursor: 'pointer',
+            minWidth: 220,
+          }}
+        >
+          {item.message}
+        </div>
+      ))}
+    </div>
+  );
+}

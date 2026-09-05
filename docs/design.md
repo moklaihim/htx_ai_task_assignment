@@ -83,7 +83,9 @@ depends on: a key shipped to the browser would be readable by anyone using the a
     └── src/
         ├── main.tsx
         ├── App.tsx
-        ├── api/              # typed fetch wrappers
+        ├── api/              # typed fetch wrappers (client.ts + one file per resource)
+        ├── types/            # hand-kept mirror of backend/src/types (4.2)
+        ├── lib/              # developerCanBeAssigned.ts, taskTree.ts — mirrored/pure helpers
         ├── pages/
         └── components/
 ```
@@ -463,6 +465,14 @@ The same function is reused on the frontend to filter the assignee dropdown
 (REQ-3.3), so the list the user sees and the rule the server enforces cannot diverge.
 The server still re-checks — a filtered dropdown is a convenience, not a guarantee.
 
+**Implementation (phase 4).** "Reused" here means a hand-kept copy —
+`frontend/src/lib/developerCanBeAssigned.ts` is byte-for-byte the same function as
+the backend's, not a cross-package import. The two are separate npm packages built
+into separate Docker images from separate build contexts (REQ-0.1), so nothing in
+`backend/` is available to copy into the frontend image at build time. The same
+applies to the shared response shapes: `frontend/src/types/` mirrors
+`backend/src/types/` file-for-file (see §6.5's implementation note).
+
 ### 4.3 The recursive Done rule (REQ-2.5, REQ-5.3)
 
 A status change to `Done` is rejected if **any** descendant, at any depth, is not
@@ -740,6 +750,27 @@ App
     └── SaveButton
 ```
 
+**Implementation (phase 4).** Phase 4 is flat tasks only, so `TaskCreationPage`
+renders a plain title `<input>` and `SkillMultiSelect` directly rather than
+`TaskFormNode` — the recursive form node arrives in phase 5 once subtasks exist,
+and `SkillMultiSelect` is written now so phase 5 can reuse it unchanged inside
+`TaskFormNode` (see §6.3's snippet, which already assumes it). "Save" is a plain
+`<button type="submit">` inside the form rather than a separate `SaveButton`
+component — it holds no state of its own beyond the surrounding form's, so a
+dedicated component would only add a file with no behavior in it.
+
+`Toaster` is a module-level publish/subscribe store (`toast.success`/`toast.error`
+functions plus a `Toaster` component that subscribes to them) rather than a React
+Context provider wrapping the tree. This lets any component — including ones
+outside `App`'s render tree, like a future non-component caller — raise a toast
+without needing to be rendered under a `<ToastProvider>`, and keeps `Toaster` a
+plain sibling of the pages exactly as drawn above.
+
+`TaskRow` already recurses over `task.subtasks` in phase 4, even though nothing has
+subtasks yet (every node's `subtasks` array is empty) — the recursion is free
+(REQ-2.2's response shape always includes `subtasks: []`) and means phase 5 needs no
+change to this component when nesting arrives.
+
 ### 6.3 `TaskFormNode` — one component, every depth (REQ-5.6)
 
 The requirement is a single reusable component invoked recursively, not one
@@ -838,6 +869,16 @@ On success the row updates and a success toast appears. On `400` the control rev
 to the last saved value and an error toast shows the server's message — so a rejected
 assignment or a blocked `Done` leaves the UI matching what is actually stored.
 
+**Implementation.** The "revert to the last saved value" needs no separate
+tracking variable: `dirty`/`selected` are compared against the `task` prop directly,
+and the parent (`TaskListPage`, via `replaceTaskInTree`) only replaces a task in
+state when the `PATCH` **succeeds**. On a `400`, the prop is therefore still the old
+value, so the revert is just `setSelected(task.assignee?.id ?? null)` (or
+`setSelected(task.status)` for `StatusControl`) — reading the same prop the dropdown
+was already comparing against, not a second copy of it. Both controls' `catch` block
+does this and calls `toast.error(err.message)`; both `try` blocks call
+`onTaskUpdated(updated)` and `toast.success(...)` beforehand.
+
 The assignee dropdown lists only eligible developers (REQ-3.3), using the same
 superset check as 4.2. The status dropdown always lists all three statuses — the
 `Done` rule depends on subtask state the server owns, so it is enforced server-side
@@ -850,6 +891,20 @@ Plain `fetch` behind typed wrappers in `src/api/`, with page-level `useState` +
 TanStack Query's caching and invalidation would be more configuration than the app
 justifies. Response types are shared with the backend via a small `types/` module,
 so an API change breaks compilation rather than silently breaking at runtime.
+
+**Implementation.** "Shared" means shape-compatible, not literally imported: since
+frontend and backend are independently deployable services built from separate
+Docker contexts (`build: ./frontend`, `build: ./backend` in `docker-compose.yml`,
+REQ-0.1), `frontend/src/types/{task,developer,error}.ts` is a hand-kept copy of
+`backend/src/types/{task,developer,error}.ts`, each file carrying a comment saying
+so. `src/api/client.ts` holds one `request()` wrapper — parses the `{error:{code,
+message}}` body on a non-2xx response into a thrown `ApiError` — with `getJson`/
+`postJson`/`patchJson` on top of it; `tasks.ts`, `developers.ts`, `skills.ts` each
+wrap one resource's endpoints using the shared types for both the parameter and
+return types. The "breaks compilation" acceptance was proved directly: renaming a
+field in `frontend/src/types/task.ts` alone (simulating the backend changing its
+response shape without the frontend's copy being updated) fails `tsc -b`, confirming
+the coupling is real rather than just documented.
 
 ---
 
