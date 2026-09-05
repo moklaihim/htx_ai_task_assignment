@@ -785,6 +785,17 @@ success and failure paths without depending on an external service, a network
 connection, or free-tier quota. The stub is selected by configuration only — the
 production path is unchanged.
 
+**Implementation (phase 6).** `src/llm/inferSkills.ts` is the single entry point the
+route uses; the three modes differ **only** in where the raw response text comes from
+(`callGemini`, `callStub`, or an immediate throw), after which all of them go through
+the same `parseSkillIds` gate. A stub that returned skill ids directly would bypass
+the one piece of code keeping invented skills out of the database, so a passing stub
+test would say nothing about `live`. The stub matches keywords on word boundaries
+rather than by substring — `includes('log')` also matches "login" — and a title with
+no signal either way falls back to **both** skills rather than none, because an empty
+classification is a failure per 5.3 and the double whose job is the success path must
+not manufacture failures; `fail` mode exists for those.
+
 ---
 
 ## 6. Frontend Design
