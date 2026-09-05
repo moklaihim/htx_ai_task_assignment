@@ -545,12 +545,18 @@ FROM tree
 LEFT JOIN developers  d  ON d.id  = tree.assignee_id
 LEFT JOIN task_skills ts ON ts.task_id = tree.id
 LEFT JOIN skills      s  ON s.id  = ts.skill_id
-GROUP BY tree.id, tree.title, tree.status, tree.parent_task_id, d.id, d.name;
+GROUP BY tree.id, tree.title, tree.status, tree.parent_task_id, d.id, d.name
+ORDER BY tree.id;
 ```
 
 `json_agg … FILTER` collects each task's skills into one JSON array in the same
 query, so there is no second round trip and no N+1. `COALESCE(…, '[]')` turns a task
-with no skills into an empty array rather than `[null]`.
+with no skills into an empty array rather than `[null]`. `ORDER BY tree.id` (added in
+phase 5, once trees could actually have more than one child) makes the response
+deterministic: a recursive CTE has no defined row order and `buildForest` preserves
+whatever order it is handed, so without it a task's subtasks could come back in a
+different order on each request. Ordering by id is creation order, which for a tree
+written by one depth-first `insertTaskTree` is the order the user entered the nodes in.
 
 **Row mapping.** With no ORM, nothing converts column names automatically: `pg`
 returns keys exactly as the database names them, so a row arrives as

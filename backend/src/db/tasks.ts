@@ -7,6 +7,13 @@ import { toTaskRow, type DbTaskRow } from './mapping.js';
 // the anchor term selects, walk `parent_task_id` down to full depth and fold
 // each task's skills into one JSON array with `json_agg … FILTER`, so a task
 // with none becomes `[]` rather than `[null]`.
+//
+// `ORDER BY tree.id` is what makes the response deterministic: a recursive CTE
+// has no defined row order, and `buildForest` preserves whatever order it is
+// given, so without this a tree's subtasks could come back in a different
+// order on each request. Ordering by id means creation order — which for a
+// tree built by one depth-first `insertTaskTree` is the order the user typed
+// the nodes in.
 const SELECT_TREE = `
   SELECT tree.id, tree.title, tree.status, tree.parent_task_id,
          d.id AS assignee_id, d.name AS assignee_name,
@@ -20,6 +27,7 @@ const SELECT_TREE = `
   LEFT JOIN task_skills ts ON ts.task_id = tree.id
   LEFT JOIN skills      s  ON s.id  = ts.skill_id
   GROUP BY tree.id, tree.title, tree.status, tree.parent_task_id, d.id, d.name
+  ORDER BY tree.id
 `;
 
 /**
