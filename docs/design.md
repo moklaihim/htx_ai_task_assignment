@@ -886,6 +886,31 @@ function addSubtaskTo(node: DraftNode, targetId: string): DraftNode {
 Updates are immutable (new objects rather than mutation) so React re-renders
 correctly.
 
+**Implementation (phase 5).** `TaskFormNode` (`src/components/TaskFormNode.tsx`)
+takes one extra prop over the sketch above — `skills`, the Skill catalogue fetched
+once by the page — because `SkillMultiSelect` renders a checkbox per Skill and a
+node-level component should not each fetch it. The state helpers (`DraftNode`,
+`emptyNode`, `addSubtaskTo`, `replaceChild`, `toCreateTaskInput`) live together in
+`src/lib/draftTree.ts` rather than inside the component, so they are plain functions
+testable without rendering.
+
+Two details worth naming:
+
+- `onAddSubtask` is passed straight down, unwrapped, while `onChange` is wrapped in
+  `replaceChild` at each level. They differ because they address nodes differently:
+  `onChange` receives an updated *self* and has to fold it into its parent one hop at
+  a time, whereas `onAddSubtask` carries a `localId` that the page resolves against
+  the whole tree with `addSubtaskTo`. Wrapping `onAddSubtask` the same way would
+  re-target the click at whichever node handled the callback — precisely the
+  "adds to the root instead of that node" bug REQ-5.5 rules out.
+- `newLocalId()` falls back to a page-local counter where `crypto.randomUUID` is
+  undefined. Compose serves the SPA on `http://localhost:3000`, which is a secure
+  context, but a reviewer opening it over a LAN address would otherwise crash on the
+  first render.
+
+Nodes carry `data-testid="task-form-node"` and `data-depth`, which is what the
+end-to-end run asserts nesting against.
+
 ### 6.4 The Update-button pattern (REQ-3.2–3.6)
 
 Both `AssigneeControl` and `StatusControl` follow the identical three-state
