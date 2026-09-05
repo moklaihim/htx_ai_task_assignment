@@ -1,4 +1,5 @@
-import type { Skill, TaskRow, TaskStatus } from '../types/task.js';
+import type { AssignedTaskSummary, Skill, TaskRow, TaskStatus } from '../types/task.js';
+import type { Developer } from '../types/developer.js';
 
 /**
  * A task row exactly as `pg` returns it from the query in design §4.4 — column
@@ -39,3 +40,28 @@ export function toTaskRow(row: DbTaskRow): TaskRow {
     skills: row.skills ?? [],
   };
 }
+
+/**
+ * A developer row as returned by the query in `db/developers.ts` — one row per
+ * developer, with `skills` and `assigned_tasks` each aggregated into a JSON
+ * array by a correlated subquery rather than a join, since a developer has two
+ * independent one-to-many relations (skills, assigned tasks) that a single
+ * `GROUP BY`/join would cross-multiply against each other.
+ */
+export interface DbDeveloperRow {
+  id: number;
+  name: string;
+  skills: Skill[] | null;
+  assigned_tasks: AssignedTaskSummary[] | null;
+}
+
+/** Maps a developer row to the camelCase shape the API contract uses (REQ-2.6, REQ-2.7). */
+export function toDeveloper(row: DbDeveloperRow): Developer {
+  return {
+    id: row.id,
+    name: row.name,
+    skills: row.skills ?? [],
+    assignedTasks: row.assigned_tasks ?? [],
+  };
+}
+
