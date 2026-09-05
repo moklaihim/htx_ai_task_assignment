@@ -776,6 +776,19 @@ The frontend reads the flag and shows a transient, non-blocking notification
 (REQ-4.6). Failures are also logged server-side with the task title and the reason,
 so a reviewer seeing the toast can find out why in the container logs.
 
+**Implementation (phase 6).** The route logs one `llm: skill inference failed for
+"<title>": <reason>` line per failure and then calls `markInferenceFailures`, which
+copies the flags onto the re-read tree by walking request and response in lockstep —
+sound because `insertTaskTree` writes depth-first and the read path orders by id, so
+`response.subtasks[i]` is the row created from `request.subtasks[i]`. Matching on
+title instead would flag the wrong node whenever two subtasks share a name. On the
+frontend, `collectSkillInferenceFailures` (`src/lib/taskTree.ts`) gathers the flagged
+titles from the whole response tree and `TaskCreationPage` raises one `toast.error`
+naming them (capped at three plus "and N more", since a toast that grows to fill the
+screen is no longer non-modal in practice). It is raised *after* the success toast
+and *before* `navigate('/')`, so the save completes either way — the notification is
+informational, never a gate.
+
 ### 5.4 Test double
 
 `LLM_MODE` (default `live`) also accepts `stub` and `fail`. In `stub` mode the client
