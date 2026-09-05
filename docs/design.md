@@ -218,13 +218,15 @@ existing task. So the graph can only ever be a tree — no cycle check is needed
 
 Migrations are plain SQL files named `001_init.sql`, `002_….sql`. The runner:
 
-1. Creates `schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ)`
-   if absent.
+1. Creates `schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ
+   NOT NULL DEFAULT now())` if absent.
 2. Reads `db/migrations/`, sorts filenames.
 3. For each file not already in `schema_migrations`: run it and record it, both
    inside one transaction, so a failing migration leaves no partial state.
 
 Applied files are never re-run, so startup is safe to repeat (REQ-7.4).
+`runMigrations(pool)` returns the filenames it applied — empty on a repeat run,
+which is what the idempotency test asserts on rather than parsing log output.
 
 **Triggered by** `backend/entrypoint.sh`, which the Dockerfile sets as `CMD`:
 
@@ -233,7 +235,7 @@ Applied files are never re-run, so startup is safe to repeat (REQ-7.4).
 set -e
 node dist/db/migrate.js
 node dist/db/seed.js
-node dist/index.js
+node dist/src/index.js
 ```
 
 `set -e` stops the chain if any step fails — a broken migration must not be followed
@@ -244,6 +246,19 @@ makes 3.3's idempotency guarantee load-bearing rather than incidental — a seco
 `docker-compose up` re-triggers the same three steps against the same volume, and
 the migration table plus `ON CONFLICT` clauses are what make that a no-op instead of
 an error.
+
+**Why `dist/src/index.js` and not `dist/index.js`.** `migrate.ts` and `seed.ts` live
+in `backend/db/`, outside `src/`, so `tsconfig.json` compiles both directories
+(`rootDir: "."`). The common root is `backend/`, which puts the output at
+`dist/db/…` and `dist/src/…`. The alternative — moving the runners into `src/db/` —
+would split the SQL from the code that runs it, so the entry-point path moved
+instead.
+
+**The runners locate their `.sql` files relative to their own module** (via
+`import.meta.url`), never via the working directory, so the same code works when run
+from source (`tsx db/migrate.ts`, and the integration tests) and from `dist` in the
+container. `npm run build` therefore copies `db/migrations/*.sql` and `db/seed.sql`
+next to the compiled output as part of the build.
 
 ### 3.4 Seed data (REQ-1.9)
 
@@ -284,8 +299,11 @@ running it against an already-seeded database changes nothing. This matters beca
 plain `INSERT`s would either duplicate developers or fail on the second run.
 
 **Triggered by** `db/seed.ts` — a few lines that read `seed.sql` and execute it
-against the same `pg` Pool `migrate.ts` uses. Invoked from `entrypoint.sh`, right
-after migrations, as shown in 3.3.
+against the same `pg` Pool `migrate.ts` uses. The whole file is passed to one
+`query()` call: `pg` sends it as a simple query, and Postgres runs the statements
+sequentially inside one implicit transaction, so statement 3 sees the developers
+statement 2 inserted — the sequencing the previous paragraph depends on. Invoked
+from `entrypoint.sh`, right after migrations, as shown in 3.3.
 
 **Both `migrate.ts` and `seed.ts` export a callable function** (`runMigrations(pool)`,
 `runSeed(pool)`) and only run themselves when executed directly as a script. The
@@ -496,11 +514,12 @@ with no skills into an empty array rather than `[null]`.
 **Row mapping.** With no ORM, nothing converts column names automatically: `pg`
 returns keys exactly as the database names them, so a row arrives as
 `{ id, title, status, parent_task_id, assignee_id, assignee_name, skills }`. A small
-`toTaskRow(row)` function in `src/db/` maps each row to the camelCase shape the rest
-of the code and the API contract use, and folds `assignee_id`/`assignee_name` into
-the nested `assignee` object (or `null`). Every query result passes through it, so
+`toTaskRow(row)` function in `src/db/mapping.ts` maps each row to the camelCase shape
+the rest of the code and the API contract use, and folds `assignee_id`/`assignee_name`
+into the nested `assignee` object (or `null`). Every query result passes through it, so
 column naming stays confined to the `db/` layer rather than leaking into services and
-routes.
+routes. The raw shape (`DbTaskRow`) is declared next to the mapper; the mapped shapes
+(`TaskRow`, `TaskNode`, `Skill`, `TaskStatus`) live in `src/types/task.ts`.
 
 Assembling the rows into a forest, once rows are mapped:
 
@@ -838,9 +857,10 @@ and leaving it out keeps the images small. A `.dockerignore` in each service kee
 the host's `node_modules/` and `dist/` out of the build context, so the image never
 picks up host-built (wrong-architecture) artifacts.
 
-- **backend**: build stage installs all dependencies and compiles TS → JS. Runtime
-  stage copies `dist/`, production-only `node_modules`, the `db/migrations/` and
-  `db/seed.sql` files, and `entrypoint.sh` onto `node:20-alpine`, setting it as
+- **backend**: build stage installs all dependencies, copies `src/` and `db/`, and
+  compiles TS → JS (the `.sql` files are copied next to the output by the build
+  script, per 3.3). Runtime stage copies `dist/`, production-only `node_modules`,
+  the `db/` directory and `entrypoint.sh` onto `node:20-alpine`, setting it as
   `CMD ["./entrypoint.sh"]` — this is what actually runs the sequence in 3.3 each
   time the container starts.
 - **frontend**: build stage runs `vite build`; runtime stage copies `dist/` into
@@ -861,9 +881,9 @@ at that path and return 404.
 
 The backend entrypoint runs, in order: the migration runner (3.3), then the
 idempotent seed (3.4), then the server. Both steps are safe to repeat, so restarting
-a container against an existing volume is a no-op rather than an error. Each step is
-guarded by a file-existence check, so the same entrypoint is valid before those
-scripts exist (phase 1) and after they do.
+a container against an existing volume is a no-op rather than an error — verified by
+`docker-compose restart backend`, after which the runner reports no pending
+migrations and the developer and skill-link counts are unchanged.
 
 The `/health/db` check (REQ-0.4) opens a pooled connection and runs `SELECT 1`,
 answering 503 when that fails. The pool is created with a bounded
