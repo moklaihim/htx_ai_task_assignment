@@ -40,7 +40,13 @@ depends on: a key shipped to the browser would be readable by anyone using the a
 ├── docs/
 │   ├── requirements.md
 │   ├── design.md
-│   └── tasks.md
+│   ├── phase-1.md
+│   ├── phase-2.md
+│   ├── phase-3.md
+│   ├── phase-4.md
+│   ├── phase-5.md
+│   ├── phase-6.md
+│   └── phase-7.md
 ├── e2e/                      # Playwright specs (section 8.3)
 │   ├── playwright.config.ts
 │   └── specs/
@@ -893,17 +899,18 @@ Covered by REQ-0.9.
 
 ## 9. Mapping to Build Phases
 
-Detailed in `tasks.md`; the boundaries below are what that document expands on.
+Detailed in `phase-1.md` through `phase-7.md`; the boundaries below are what those
+documents expand on.
 
 | Phase | Covers | Design sections | Requirements |
 |---|---|---|---|
-| 1 | Skeleton: three services, health checks | 1, 7.1 | REQ-0.1–0.4, 7.3 |
-| 2 | Schema, migration runner, seed | 3 | REQ-1.1–1.10 |
-| 3 | Task/Developer/Skill endpoints, flat (no nesting yet) | 4.1, 4.2, 4.4 | REQ-2.2–2.4, 2.6–2.8; REQ-2.1 and 2.5 partially |
-| 4 | Task List + Creation pages | 6.1, 6.2, 6.4, 6.5 | REQ-3.1–3.6, 4.1–4.5 |
-| 5 | Subtasks: tree create/read, Done rule, recursive form | 4.3–4.5, 6.3 | REQ-5.1–5.7; completes REQ-2.1, 2.5 |
-| 6 | LLM inference, failure flag, notification | 5 | REQ-6.1–6.7, 4.6 |
-| 7 | E2E suite, final containerization, `.env`, README | 7, 8.3, 2 | REQ-7.1–7.5, 8.1–8.5, 0.9 |
+| 1 | Skeleton: three services, health checks | 1, 7.1 | REQ-0.1–0.6, 0.8, 7.1–7.3, 7.5 |
+| 2 | Schema, migration runner, seed | 3 | REQ-1.1–1.7, 1.9, 1.10; REQ-7.4 partially |
+| 3 | Task/Developer/Skill endpoints, flat (no nesting yet) | 4.1, 4.2, 4.4 | REQ-0.9, 1.8, 2.2–2.4, 2.6–2.8; REQ-2.1 and 2.5 partially |
+| 4 | Task List + Creation pages | 6.1, 6.2, 6.4, 6.5 | REQ-0.7, 3.1–3.6, 4.1–4.5 |
+| 5 | Subtasks: tree create/read, Done rule, recursive form | 4.3–4.5, 6.3 | REQ-0.9, 2.2, 2.3, 3.1, 5.1–5.7; completes REQ-2.1, 2.5 |
+| 6 | LLM inference, failure flag, notification | 5 | REQ-0.9, 4.6, 6.1–6.7 |
+| 7 | E2E suite, final containerization, `.env`, README | 7, 8.3, 2 | REQ-0.9, 7.1, 7.2, 7.4, 7.5, 8.1–8.5 |
 
 Two requirements are delivered across two phases, which is deliberate. **REQ-2.1**
 (`POST /tasks`) is built in phase 3 accepting title and skills only; phase 5 adds the
@@ -912,9 +919,16 @@ subtask check, since no task can have subtasks yet; phase 5 adds the recursive D
 rule. Neither is finished until phase 5, and the phase-5 exit check must re-verify
 both rather than assuming phase 3 settled them.
 
+`GET /tasks` and `GET /tasks/:id` (REQ-2.2, REQ-2.3) follow the same pattern without
+being called out as a formal split: phase 3 delivers them against flat tasks, and
+phase 5's tree-reading logic (4.4) is what actually fulfills the "including nested
+subtasks" part of their wording. They're listed under both phases in the table above
+for that reason.
+
 Unit and integration tests are written within the phase that introduces the code they
 cover, not deferred to phase 7. Only the browser-level e2e suite waits, since it needs
 the full stack running.
 
 Each phase ends in a verifiable state, so a fault is caught inside the phase that
 introduced it rather than several phases later.
+</parameter_invoke_name>
