@@ -1,3 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+build/
+.cache/
+coverage/
+*.tsbuildinfo
+
+# Environment files (REQ-7.5 — the real key never enters the repository)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Playwright artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # Logs
 logs
 *.log
@@ -6,25 +28,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Dependencies
-node_modules/
-
-# Environment files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-!.env.example
-
-# React build artifacts
-build/
-dist/
-.cache/
-.parcel-cache/
-coverage/
-
-# Express / Node runtime artifacts
+# Node runtime artifacts
 pids
 *.pid
 *.pid.lock
@@ -32,15 +36,10 @@ pids
 *.out
 *.err
 
-# Docker artifacts
-.docker/
-docker-data/
+# Docker / Postgres local state
 docker-compose.override.yml
-
-# PostgreSQL local data and dumps
 postgres-data/
 pgdata/
-*.sql
 *.dump
 *.bak
 
