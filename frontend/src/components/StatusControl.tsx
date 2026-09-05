@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { TaskNode, TaskStatus } from '../types';
 import { updateTaskStatus } from '../api/tasks';
+import { ApiError } from '../api/client';
 import { toast } from './Toaster';
 
 interface Props {
@@ -30,9 +31,12 @@ export function StatusControl({ task, onTaskUpdated }: Props) {
       const updated = await updateTaskStatus(task.id, selected);
       onTaskUpdated(updated);
       toast.success(`${task.title}: status updated to ${updated.status}`);
+    } catch (err) {
+      // REQ-3.6: the UI never shows a value the server rejected — revert the
+      // dropdown to the last saved value and surface the server's message.
+      setSelected(task.status);
+      toast.error(err instanceof ApiError ? err.message : 'Failed to update status');
     } finally {
-      // Revert-on-400 + error toast is added in task 4.7, which touches this
-      // and AssigneeControl together.
       setSaving(false);
     }
   }

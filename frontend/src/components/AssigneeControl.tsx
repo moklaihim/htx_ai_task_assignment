@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Developer, TaskNode } from '../types';
 import { assignTask } from '../api/tasks';
+import { ApiError } from '../api/client';
 import { toast } from './Toaster';
 import { developerCanBeAssigned } from '../lib/developerCanBeAssigned';
 
@@ -48,9 +49,12 @@ export function AssigneeControl({ task, developers, onTaskUpdated }: Props) {
       onTaskUpdated(updated);
       const name = updated.assignee?.name ?? 'Unassigned';
       toast.success(`${task.title}: assignee updated to ${name}`);
+    } catch (err) {
+      // REQ-3.4: the UI never shows a value the server rejected — revert the
+      // dropdown to the last saved value and surface the server's message.
+      setSelected(savedId);
+      toast.error(err instanceof ApiError ? err.message : 'Failed to update assignee');
     } finally {
-      // Revert-on-400 + error toast is added in task 4.7, which touches this
-      // and StatusControl together.
       setSaving(false);
     }
   }
