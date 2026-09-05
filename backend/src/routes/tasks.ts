@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { getAllTaskRows, getTaskTreeRows, insertFlatTask, updateTaskAssignee, updateTaskStatus } from '../db/tasks.js';
+import { getAllTaskRows, getTaskTreeRows, insertTaskTree, updateTaskAssignee, updateTaskStatus } from '../db/tasks.js';
 import { findMissingSkillIds } from '../db/skills.js';
 import { getDeveloperById } from '../db/developers.js';
 import { buildForest } from '../services/buildForest.js';
+import { collectSkillIds } from '../services/collectSkillIds.js';
 import { developerCanBeAssigned } from '../services/developerCanBeAssigned.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../errors/AppError.js';
@@ -44,7 +45,8 @@ tasksRouter.get(
   }),
 );
 
-// REQ-2.1 (partial) — title + skillIds only; subtasks arrive in phase 5.
+// REQ-2.1, REQ-5.7 — the whole task/subtask tree, created in one request and
+// one transaction (design §4.5).
 tasksRouter.post(
   '/tasks',
   asyncHandler(async (req, res) => {
@@ -53,14 +55,16 @@ tasksRouter.post(
       throw AppError.validation(formatValidationIssues(parsed.error));
     }
 
-    const { title, skillIds } = parsed.data;
+    const root = parsed.data;
 
-    const missing = await findMissingSkillIds(pool, skillIds);
+    // Every skill id in the tree, not just the root's — otherwise a bad id on
+    // a grandchild would only surface as a foreign-key error mid-transaction.
+    const missing = await findMissingSkillIds(pool, collectSkillIds(root));
     if (missing.length > 0) {
       throw AppError.validation(`Unknown skill id(s): ${missing.join(', ')}`);
     }
 
-    const taskId = await insertFlatTask(pool, title, skillIds);
+    const taskId = await insertTaskTree(pool, root);
     const rows = await getTaskTreeRows(pool, taskId);
     const [task] = buildForest(rows);
 

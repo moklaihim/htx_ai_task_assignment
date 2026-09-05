@@ -614,12 +614,10 @@ aggregate per row.
 
 ### 4.5 Creating a tree (REQ-2.1, REQ-5.7)
 
-**Phase 3 implements a flat subset of this** (3.5): `POST /tasks` accepts only
-`title` and `skillIds` — no `subtasks`, no LLM inference — so steps 1–3 below and the
-recursive insert in step 4 do not apply yet. `insertFlatTask` (`src/db/tasks.ts`)
-still opens one transaction for its two writes (`INSERT INTO tasks`, then each
-`INSERT INTO task_skills`), so a bad skill id slipping past validation can't leave a
-task row with no skills behind. The full recursive version below is built in phase 5.
+**Phase 3 implemented a flat subset of this**: `POST /tasks` accepted only `title`
+and `skillIds`, via an `insertFlatTask` that opened a transaction for its two writes.
+**Phase 5 replaced it** with the full recursive version below (`insertTaskTree` in
+`src/db/tasks.ts`); LLM inference (steps 2–3) still arrives in phase 6.
 
 The whole tree is created inside **one database transaction**, so a failure part-way
 leaves nothing behind rather than a half-built tree:
@@ -640,6 +638,22 @@ connection locked for as long as the slowest LLM response takes.
 All queries in one request use a single client checked out from the `pg` Pool, since
 `BEGIN`/`COMMIT` are connection-scoped — issuing them on pooled connections at random
 would not form a transaction.
+
+**Implementation (phase 5).** `insertTaskTree(pool, root)` checks out one client,
+`BEGIN`s, and hands it to a private `insertTaskNode(client, node, parentTaskId)` that
+inserts the task row, takes the id from `RETURNING`, writes that node's `task_skills`
+rows, then recurses into each child with that id as `parent_task_id`. Its awaits are
+sequential rather than `Promise.all`: one `pg` client is one connection and cannot run
+queries concurrently, and this is the client the transaction is open on. `ROLLBACK` on
+any error, `client.release()` in `finally`, so a failed tree neither leaves rows behind
+nor leaks the connection.
+
+Step 1's validation is extended slightly beyond the schema: `collectSkillIds`
+(`src/services/collectSkillIds.ts`) gathers the de-duplicated skill ids from *every*
+node in the tree, and `findMissingSkillIds` checks them in one round trip before the
+transaction opens. Checking only the root's ids would let a bad id on a grandchild
+through to surface as a foreign-key violation mid-insert — a `500` where the contract
+calls for a `400 VALIDATION_ERROR`.
 
 ---
 

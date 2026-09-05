@@ -1,9 +1,17 @@
 import type { AddressInfo } from 'node:net';
+import type { Pool } from 'pg';
 import { createTestDatabase } from './testDatabase.js';
 
 export interface TestServer {
   /** Base URL of the in-process app, e.g. `http://127.0.0.1:54213`. */
   baseUrl: string;
+  /**
+   * The app's own `pg` Pool, pointed at this run's disposable database. Tests
+   * that need to look at (or provoke) database state directly — counting rows
+   * left behind by a rolled-back transaction, say — use this rather than
+   * opening a second pool, so they see exactly what the app sees.
+   */
+  pool: Pool;
   /** Closes the HTTP server, the app's pg Pool, and drops the test database. */
   close(): Promise<void>;
 }
@@ -38,6 +46,7 @@ export async function startTestServer(): Promise<TestServer> {
 
   return {
     baseUrl: `http://127.0.0.1:${port}`,
+    pool,
     async close() {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
