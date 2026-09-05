@@ -8,10 +8,15 @@ import {
   updateTaskAssignee,
   updateTaskStatus,
 } from '../db/tasks.js';
-import { findMissingSkillIds } from '../db/skills.js';
+import { findMissingSkillIds, getAllSkills } from '../db/skills.js';
 import { getDeveloperById } from '../db/developers.js';
 import { buildForest } from '../services/buildForest.js';
 import { collectSkillIds } from '../services/collectSkillIds.js';
+import {
+  collectNodesNeedingSkills,
+  inferMissingSkills,
+} from '../services/skillInference.js';
+import { inferSkillIds } from '../llm/inferSkills.js';
 import { developerCanBeAssigned } from '../services/developerCanBeAssigned.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../errors/AppError.js';
@@ -69,6 +74,21 @@ tasksRouter.post(
     const missing = await findMissingSkillIds(pool, collectSkillIds(root));
     if (missing.length > 0) {
       throw AppError.validation(`Unknown skill id(s): ${missing.join(', ')}`);
+    }
+
+    // REQ-6.1, REQ-6.2, REQ-6.3 — every node in the tree whose skills the user
+    // left empty is classified by the LLM, on the backend, with no user action.
+    // Deliberately **before** `insertTaskTree` opens its transaction (design
+    // §4.5): holding a transaction open across several calls to an external API
+    // would pin a database connection for as long as the slowest response takes.
+    // Successful ids are written onto the nodes, so the insert path persists
+    // them exactly as if the user had picked them (REQ-6.2).
+    const nodesNeedingSkills = collectNodesNeedingSkills(root);
+    if (nodesNeedingSkills.length > 0) {
+      const seededSkills = await getAllSkills(pool);
+      await inferMissingSkills(nodesNeedingSkills, (title) =>
+        inferSkillIds(title, seededSkills),
+      );
     }
 
     const taskId = await insertTaskTree(pool, root);
