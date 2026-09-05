@@ -15,4 +15,4 @@ if [ -f dist/db/seed.js ]; then
   node dist/db/seed.js
 fi
 
-exec node dist/index.js
+exec node dist/src/index.js
