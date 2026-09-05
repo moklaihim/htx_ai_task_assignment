@@ -1,0 +1,59 @@
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+
+/**
+ * Same host/user/password as the app's own `DATABASE_URL`, pointed at
+ * Postgres's `postgres` maintenance database instead of the app database —
+ * that is the connection every Postgres install accepts `CREATE DATABASE`/
+ * `DROP DATABASE` on, regardless of what the app database happens to be
+ * called. Works unmodified against the docker-compose `db` service or a
+ * local Postgres (design §8.2, REQ-0.9: "Runs without Docker").
+ */
+function withDatabaseName(name: string): string {
+  const base = process.env.DATABASE_URL ?? 'postgresql://app:app@localhost:5432/taskdb';
+  const url = new URL(base);
+  url.pathname = `/${name}`;
+  return url.toString();
+}
+
+export interface TestDatabase {
+  /** Connection string for the newly created, empty database. */
+  url: string;
+  /** Drops the database. Safe to call once test teardown is done with it. */
+  drop(): Promise<void>;
+}
+
+/**
+ * Creates a fresh, empty, uniquely-named Postgres database (design §8.2: "a
+ * disposable database ... per run"). Callers are expected to run migrations
+ * and seed data into it themselves — this only provisions the empty
+ * database, so it stays reusable by any test file regardless of what schema
+ * it needs.
+ */
+export async function createTestDatabase(): Promise<TestDatabase> {
+  const dbName = `taskdb_test_${randomUUID().replace(/-/g, '')}`;
+  const admin = new Pool({ connectionString: withDatabaseName('postgres') });
+  try {
+    await admin.query(`CREATE DATABASE "${dbName}"`);
+  } finally {
+    await admin.end();
+  }
+
+  return {
+    url: withDatabaseName(dbName),
+    async drop() {
+      const admin2 = new Pool({ connectionString: withDatabaseName('postgres') });
+      try {
+        // A database cannot be dropped while another session holds a
+        // connection to it — terminate any left over from the test run.
+        await admin2.query(
+          'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
+          [dbName],
+        );
+        await admin2.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+      } finally {
+        await admin2.end();
+      }
+    },
+  };
+}
