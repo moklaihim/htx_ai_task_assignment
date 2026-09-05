@@ -391,8 +391,17 @@ on each node. Its three possible states:
 | `skills` | `skillInferenceFailed` | Meaning |
 |---|---|---|
 | non-empty | field absent | Skills were supplied by the user, or inferred successfully |
-| `[]` | field absent | User supplied none and the LLM legitimately returned none |
-| `[]` | `true` | The LLM call was attempted and failed (REQ-6.4) |
+| `[]` | field absent | Skills were supplied by the user as an explicit empty list — not reachable in the shipped build, since an empty `skillIds` always triggers inference |
+| `[]` | `true` | Inference was attempted and did not yield any seeded skill (REQ-6.4) |
+
+**Implementation (phase 6).** The middle row was originally written as "the LLM
+legitimately returned none". Phase 6 made that state a *failure* instead, per §5.3's
+"JSON with no valid skill names": a response of `{"skills":[]}`, or one naming only
+skills that aren't seeded, leaves the task exactly as unclassified as a network error
+does, and REQ-6.1's promise is that a task created without skills gets some. Reporting
+one silently and the other with a toast would draw a distinction the user cannot act
+on. The row is kept in the table because it remains the correct reading of the
+response shape — a client must not assume an empty `skills` implies the flag.
 
 Without this field the last two rows would be indistinguishable — both are an empty
 `skills` array — and the frontend would have no way to know whether to show the
@@ -682,7 +691,7 @@ calls for a `400 VALIDATION_ERROR`.
 | Variable | Committed default | Notes |
 |---|---|---|
 | `LLM_BASE_URL` | yes | non-sensitive |
-| `LLM_MODEL` | yes (`gemini-2.0-flash`) | non-sensitive |
+| `LLM_MODEL` | yes (`gemini-3.5-flash`) | non-sensitive |
 | `LLM_TIMEOUT_MS` | yes (`10000`) | non-sensitive |
 | `LLM_MODE` | yes (`live`) | `live` \| `stub` \| `fail` — see 5.4 |
 | `LLM_API_KEY` | **no** | supplied via `.env` at container start |
@@ -691,6 +700,15 @@ Read once at startup into a typed config object. If `LLM_API_KEY` is missing the
 backend still boots — every inference attempt then fails and falls back per REQ-6.4,
 so a reviewer who forgets the key gets a working app with a clear notification
 rather than a container that won't start.
+
+**Implementation (phase 6).** `LLM_MODEL` was originally defaulted to
+`gemini-2.0-flash`. The live verification in 6.9 found that model retired — the API
+answers `404 … is no longer available` for it — which made the committed default
+useless and quietly turned every task into the REQ-6.4 failure case, exactly the
+reviewer-action-required situation REQ-6.7 exists to prevent. The default is now
+`gemini-3.5-flash`, verified against all three PDF reference titles. A `…-latest`
+alias would age better but pins nothing, so two reviewers could see different
+classifications from the same checkout.
 
 The remaining environment variables are not LLM-related but belong in the same
 `.env.example` template (REQ-7.5), all with committed defaults:
@@ -738,6 +756,31 @@ skill name is dropped rather than created — the skill set is fixed at
 `Frontend`/`Backend`, and letting the model invent skills would corrupt the
 matching rule in 4.2.
 
+**Implementation (phase 6).** `src/llm/prompt.ts` holds the text above
+(`buildPrompt(title)`), with the three examples written as single unwrapped lines —
+the line breaks in the block above are only this document's column width, and
+feeding them to the model would put newlines inside the example titles.
+`src/llm/geminiClient.ts` `POST`s it to
+`{baseUrl}/v1beta/models/{model}:generateContent` with `temperature: 0`, since
+classification wants the most likely answer every time rather than variety. The API
+key travels in an `x-goog-api-key` header rather than the `?key=` query parameter
+Google's quickstart uses: a URL ends up in access logs and error messages, and the
+key must not (REQ-6.7). The configured timeout is enforced with an `AbortController`,
+not merely awaited — `fetch` has no default deadline, so a hung connection would
+otherwise keep the whole `POST /tasks` request waiting indefinitely.
+
+**Manual verification (task 6.9, REQ-6.5).** Run in `live` mode against
+`gemini-3.5-flash`, the three PDF reference titles classify as the PDF states —
+`Frontend`, `Backend`, and `Frontend, Backend` respectively. Since those same titles
+are the prompt's few-shot examples, three *unseen* paraphrases were checked alongside
+them ("product grid to reflow on small screens" → `Frontend`; "nightly database
+backups retained for 30 days" → `Backend`; "filter my orders by date range … without
+a page reload" → `Frontend, Backend`), all correct, which is what shows the prompt
+generalises rather than echoing its examples. Gemini intermittently answers `503 …
+experiencing high demand`; that is handled as an ordinary failure (5.3) rather than
+retried, since the fallback already keeps task creation working and a retry loop
+would multiply the latency of the very request the user is waiting on.
+
 ### 5.3 Failure handling (REQ-6.4, REQ-6.6, REQ-4.6)
 
 Treated as failures: network error, non-2xx, timeout, unparseable JSON, JSON with no
@@ -754,6 +797,19 @@ The frontend reads the flag and shows a transient, non-blocking notification
 (REQ-4.6). Failures are also logged server-side with the task title and the reason,
 so a reviewer seeing the toast can find out why in the container logs.
 
+**Implementation (phase 6).** The route logs one `llm: skill inference failed for
+"<title>": <reason>` line per failure and then calls `markInferenceFailures`, which
+copies the flags onto the re-read tree by walking request and response in lockstep —
+sound because `insertTaskTree` writes depth-first and the read path orders by id, so
+`response.subtasks[i]` is the row created from `request.subtasks[i]`. Matching on
+title instead would flag the wrong node whenever two subtasks share a name. On the
+frontend, `collectSkillInferenceFailures` (`src/lib/taskTree.ts`) gathers the flagged
+titles from the whole response tree and `TaskCreationPage` raises one `toast.error`
+naming them (capped at three plus "and N more", since a toast that grows to fill the
+screen is no longer non-modal in practice). It is raised *after* the success toast
+and *before* `navigate('/')`, so the save completes either way — the notification is
+informational, never a gate.
+
 ### 5.4 Test double
 
 `LLM_MODE` (default `live`) also accepts `stub` and `fail`. In `stub` mode the client
@@ -762,6 +818,17 @@ in `fail` mode every call throws. This exists so e2e tests (8.3) can cover both 
 success and failure paths without depending on an external service, a network
 connection, or free-tier quota. The stub is selected by configuration only — the
 production path is unchanged.
+
+**Implementation (phase 6).** `src/llm/inferSkills.ts` is the single entry point the
+route uses; the three modes differ **only** in where the raw response text comes from
+(`callGemini`, `callStub`, or an immediate throw), after which all of them go through
+the same `parseSkillIds` gate. A stub that returned skill ids directly would bypass
+the one piece of code keeping invented skills out of the database, so a passing stub
+test would say nothing about `live`. The stub matches keywords on word boundaries
+rather than by substring — `includes('log')` also matches "login" — and a title with
+no signal either way falls back to **both** skills rather than none, because an empty
+classification is a failure per 5.3 and the double whose job is the success path must
+not manufacture failures; `fail` mode exists for those.
 
 ---
 
@@ -1010,7 +1077,7 @@ services:
       - PORT=4000
       - DATABASE_URL=${DATABASE_URL:-postgresql://app:app@db:5432/taskdb}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
-      - LLM_MODEL=${LLM_MODEL:-gemini-2.0-flash}
+      - LLM_MODEL=${LLM_MODEL:-gemini-3.5-flash}
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-10000}
       - LLM_MODE=${LLM_MODE:-live}
       - LLM_API_KEY=${LLM_API_KEY}
@@ -1156,6 +1223,19 @@ exist until phases 5 and 6:
   after the grandchild is `Done`, the same call → `200`.
 - LLM in `stub` mode → empty `skillIds` gets filled; in `fail` mode → task still
   created, `skillInferenceFailed: true` present.
+
+**Implementation (phase 6).** `LLM_MODE` is per *file*, not per test: `src/llm/config.ts`
+reads the environment once at module load, so a file selects its mode by setting
+`process.env.LLM_MODE` before importing the harness — hence one file per mode
+(`tasksLlmStub`, `tasksLlmFail`, and `tasksLlmNoKey` for `live` with the key removed,
+the state a reviewer who never edits `.env` lands in). `startTestServer` defaults the
+mode to `fail` when a file hasn't chosen one, so no test can accidentally reach Gemini,
+spend quota, or behave differently depending on whether the machine running it happens
+to have `LLM_API_KEY` exported (REQ-0.9). Under that default a node created without
+skills keeps the empty `skills` array the phase-3 and phase-5 tests were written
+against; the one assertion that needed changing was the phase-5 "a fresh read agrees
+with the POST response" deep equality, which now drops the response-only
+`skillInferenceFailed` field before comparing — a `GET` must not carry it (§4.1).
 
 ### 8.3 End-to-end (Playwright)
 

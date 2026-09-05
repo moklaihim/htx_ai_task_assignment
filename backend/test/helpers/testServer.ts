@@ -31,6 +31,15 @@ export async function startTestServer(): Promise<TestServer> {
   const db = await createTestDatabase();
   process.env.DATABASE_URL = db.url;
 
+  // Phase 6: no test may depend on an external service, a network connection,
+  // or whether the machine running it happens to have `LLM_API_KEY` exported
+  // (REQ-0.9). Files that want a specific mode set `LLM_MODE` themselves
+  // *before* importing this helper — `src/llm/config.ts` reads the environment
+  // at module load, so first write wins; everything else gets the
+  // deterministic `fail` double, under which a node created without skills
+  // keeps the empty `skills` array those tests were written against.
+  process.env.LLM_MODE ??= 'fail';
+
   const { pool } = await import('../../src/db/pool.js');
   const { runMigrations } = await import('../../db/migrate.js');
   const { runSeed } = await import('../../db/seed.js');

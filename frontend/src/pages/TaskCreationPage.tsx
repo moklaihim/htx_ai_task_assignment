@@ -5,6 +5,7 @@ import { createTask } from '../api/tasks';
 import { ApiError } from '../api/client';
 import { toast } from '../components/Toaster';
 import { TaskFormNode } from '../components/TaskFormNode';
+import { collectSkillInferenceFailures } from '../lib/taskTree';
 import {
   addSubtaskTo,
   countNodes,
@@ -62,9 +63,23 @@ export function TaskCreationPage() {
     try {
       // One request, whole tree — `toCreateTaskInput` only strips `localId`,
       // because the draft shape already matches the API's body shape.
-      await createTask(toCreateTaskInput(tree));
+      const created = await createTask(toCreateTaskInput(tree));
       const saved = countNodes(tree);
       toast.success(saved === 1 ? `Created "${tree.title.trim()}"` : `Created ${saved} tasks`);
+
+      // REQ-4.6 — automatic skill detection failed for these nodes. Purely
+      // informational: the tasks are already saved with an empty Skills list
+      // (REQ-6.4), so this neither blocks nor rolls back the save, and the
+      // navigation below happens either way. A toast rather than a dialog for
+      // exactly that reason — there is no decision for the user to make, only
+      // something to know, and the Skills can be set afterwards.
+      const failedTitles = collectSkillInferenceFailures(created);
+      if (failedTitles.length > 0) {
+        toast.error(
+          `Automatic skill detection failed for ${describeTitles(failedTitles)}. Saved with no Skills — you can add them later.`,
+        );
+      }
+
       navigate('/');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Failed to create task');
@@ -99,4 +114,20 @@ export function TaskCreationPage() {
       </form>
     </main>
   );
+}
+
+/**
+ * Names the affected tasks in the REQ-4.6 notification, quoted so a title
+ * reads as a title. A long tree could flag many nodes, so the list is capped —
+ * a toast that grows to fill the screen stops being non-modal in practice.
+ */
+function describeTitles(titles: string[]): string {
+  const shown = titles.slice(0, 3).map((title) => `"${title}"`);
+  const remaining = titles.length - shown.length;
+
+  return remaining > 0
+    ? `${shown.join(', ')} and ${remaining} more`
+    : shown.length > 1
+      ? `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`
+      : shown[0]!;
 }

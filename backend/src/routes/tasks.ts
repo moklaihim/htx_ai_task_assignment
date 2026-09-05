@@ -8,10 +8,17 @@ import {
   updateTaskAssignee,
   updateTaskStatus,
 } from '../db/tasks.js';
-import { findMissingSkillIds } from '../db/skills.js';
+import { findMissingSkillIds, getAllSkills } from '../db/skills.js';
 import { getDeveloperById } from '../db/developers.js';
 import { buildForest } from '../services/buildForest.js';
 import { collectSkillIds } from '../services/collectSkillIds.js';
+import {
+  collectNodesNeedingSkills,
+  inferMissingSkills,
+  markInferenceFailures,
+  type InferenceFailure,
+} from '../services/skillInference.js';
+import { inferSkillIds } from '../llm/inferSkills.js';
 import { developerCanBeAssigned } from '../services/developerCanBeAssigned.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../errors/AppError.js';
@@ -71,9 +78,37 @@ tasksRouter.post(
       throw AppError.validation(`Unknown skill id(s): ${missing.join(', ')}`);
     }
 
+    // REQ-6.1, REQ-6.2, REQ-6.3 — every node in the tree whose skills the user
+    // left empty is classified by the LLM, on the backend, with no user action.
+    // Deliberately **before** `insertTaskTree` opens its transaction (design
+    // §4.5): holding a transaction open across several calls to an external API
+    // would pin a database connection for as long as the slowest response takes.
+    // Successful ids are written onto the nodes, so the insert path persists
+    // them exactly as if the user had picked them (REQ-6.2).
+    const nodesNeedingSkills = collectNodesNeedingSkills(root);
+    let failures: InferenceFailure[] = [];
+    if (nodesNeedingSkills.length > 0) {
+      const seededSkills = await getAllSkills(pool);
+      failures = await inferMissingSkills(nodesNeedingSkills, (title) =>
+        inferSkillIds(title, seededSkills),
+      );
+    }
+
+    // REQ-6.4 — a failure is logged and flagged, never thrown: an external API
+    // being down must not stop someone recording a task. The reason is only
+    // available here, so a reviewer who sees the toast can find out why from
+    // the container logs (design §5.3).
+    for (const failure of failures) {
+      console.warn(`llm: skill inference failed for "${failure.title}": ${failure.reason}`);
+    }
+
     const taskId = await insertTaskTree(pool, root);
     const rows = await getTaskTreeRows(pool, taskId);
     const [task] = buildForest(rows);
+
+    // REQ-6.6 — response-only marker, applied after the read so it never
+    // reaches the database (design §4.1).
+    markInferenceFailures(root, task!, failures);
 
     res.status(201).json(task);
   }),
