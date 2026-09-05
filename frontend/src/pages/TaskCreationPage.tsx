@@ -4,19 +4,36 @@ import { fetchSkills } from '../api/skills';
 import { createTask } from '../api/tasks';
 import { ApiError } from '../api/client';
 import { toast } from '../components/Toaster';
-import { SkillMultiSelect } from '../components/SkillMultiSelect';
+import { TaskFormNode } from '../components/TaskFormNode';
+import {
+  addSubtaskTo,
+  countNodes,
+  emptyNode,
+  everyTitleFilled,
+  toCreateTaskInput,
+  type DraftNode,
+} from '../lib/draftTree';
 import type { Skill } from '../types';
 
 /**
- * The Task Creation Page (REQ-4.1). Title + skill multi-select, no assignee
+ * The Task Creation Page (REQ-4.1, extended by REQ-5.4–5.7). No assignee
  * field (REQ-4.4 — assignment happens later, from the Task List Page). On
- * submit, `POST /tasks` and navigate back to the list on success (REQ-4.5).
+ * success, navigate back to the list (REQ-4.5).
+ *
+ * The whole draft tree lives in **one** `useState` object shaped like the
+ * `POST /tasks` body (design §6.3), so submitting is a single serialization
+ * of a single value — one `POST` for the entire tree, however deep, rather
+ * than one request per node (REQ-5.7).
+ *
+ * Both callbacks rebuild from the root: `onChange` receives an already-folded
+ * new root from `TaskFormNode`, and `onAddSubtask` runs `addSubtaskTo` over
+ * the tree to reach the node whose button was clicked, at whatever depth
+ * (REQ-5.5).
  */
 export function TaskCreationPage() {
   const navigate = useNavigate();
   const [skills, setSkills] = useState<Skill[] | null>(null);
-  const [title, setTitle] = useState('');
-  const [skillIds, setSkillIds] = useState<number[]>([]);
+  const [tree, setTree] = useState<DraftNode>(() => emptyNode());
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -43,8 +60,11 @@ export function TaskCreationPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await createTask({ title, skillIds });
-      toast.success(`Created "${title}"`);
+      // One request, whole tree — `toCreateTaskInput` only strips `localId`,
+      // because the draft shape already matches the API's body shape.
+      await createTask(toCreateTaskInput(tree));
+      const saved = countNodes(tree);
+      toast.success(saved === 1 ? `Created "${tree.title.trim()}"` : `Created ${saved} tasks`);
       navigate('/');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Failed to create task');
@@ -53,25 +73,28 @@ export function TaskCreationPage() {
     }
   }
 
+  const total = countNodes(tree);
+
   return (
     <main>
-      <h1>New Task</h1>
+      <h1>Create Task(s)</h1>
       <form onSubmit={handleSubmit}>
-        <label style={{ display: 'block', marginBottom: '1rem' }}>
-          Title
-          <br />
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Task title"
-            required
+        {skills && (
+          <TaskFormNode
+            node={tree}
+            skills={skills}
+            onChange={setTree}
+            onAddSubtask={(localId) => setTree((current) => addSubtaskTo(current, localId))}
           />
-        </label>
+        )}
 
-        {skills && <SkillMultiSelect skills={skills} selected={skillIds} onChange={setSkillIds} />}
-
-        <button type="submit" disabled={saving || title.trim().length === 0} style={{ marginTop: '1rem' }}>
-          {saving ? 'Saving…' : 'Save'}
+        <button
+          type="submit"
+          disabled={saving || !everyTitleFilled(tree)}
+          data-testid="save-task"
+          style={{ marginTop: '1rem' }}
+        >
+          {saving ? 'Saving…' : total === 1 ? 'Save' : `Save ${total} tasks`}
         </button>
       </form>
     </main>

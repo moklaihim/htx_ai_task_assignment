@@ -1,13 +1,26 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { getAllTaskRows, getTaskTreeRows, insertFlatTask, updateTaskAssignee, updateTaskStatus } from '../db/tasks.js';
+import {
+  countBlockingDescendants,
+  getAllTaskRows,
+  getTaskTreeRows,
+  insertTaskTree,
+  updateTaskAssignee,
+  updateTaskStatus,
+} from '../db/tasks.js';
 import { findMissingSkillIds } from '../db/skills.js';
 import { getDeveloperById } from '../db/developers.js';
 import { buildForest } from '../services/buildForest.js';
+import { collectSkillIds } from '../services/collectSkillIds.js';
 import { developerCanBeAssigned } from '../services/developerCanBeAssigned.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../errors/AppError.js';
-import { assignTaskSchema, createTaskSchema, updateTaskStatusSchema } from '../schemas/task.js';
+import {
+  assignTaskSchema,
+  createTaskSchema,
+  formatValidationIssues,
+  updateTaskStatusSchema,
+} from '../schemas/task.js';
 
 export const tasksRouter: Router = Router();
 
@@ -39,24 +52,26 @@ tasksRouter.get(
   }),
 );
 
-// REQ-2.1 (partial) — title + skillIds only; subtasks arrive in phase 5.
+// REQ-2.1, REQ-5.7 — the whole task/subtask tree, created in one request and
+// one transaction (design §4.5).
 tasksRouter.post(
   '/tasks',
   asyncHandler(async (req, res) => {
     const parsed = createTaskSchema.safeParse(req.body);
     if (!parsed.success) {
-      const message = parsed.error.issues.map((issue) => issue.message).join('; ');
-      throw AppError.validation(message);
+      throw AppError.validation(formatValidationIssues(parsed.error));
     }
 
-    const { title, skillIds } = parsed.data;
+    const root = parsed.data;
 
-    const missing = await findMissingSkillIds(pool, skillIds);
+    // Every skill id in the tree, not just the root's — otherwise a bad id on
+    // a grandchild would only surface as a foreign-key error mid-transaction.
+    const missing = await findMissingSkillIds(pool, collectSkillIds(root));
     if (missing.length > 0) {
       throw AppError.validation(`Unknown skill id(s): ${missing.join(', ')}`);
     }
 
-    const taskId = await insertFlatTask(pool, title, skillIds);
+    const taskId = await insertTaskTree(pool, root);
     const rows = await getTaskTreeRows(pool, taskId);
     const [task] = buildForest(rows);
 
@@ -76,8 +91,7 @@ tasksRouter.patch(
 
     const parsed = assignTaskSchema.safeParse(req.body);
     if (!parsed.success) {
-      const message = parsed.error.issues.map((issue) => issue.message).join('; ');
-      throw AppError.validation(message);
+      throw AppError.validation(formatValidationIssues(parsed.error));
     }
     const { assigneeId } = parsed.data;
 
@@ -116,8 +130,9 @@ tasksRouter.patch(
   }),
 );
 
-// REQ-2.5 (partial) — no subtask/`SUBTASKS_NOT_DONE` check yet; nothing can
-// have subtasks until phase 5 (design §4.3 is implemented then).
+// REQ-2.5, REQ-5.3 — a change to `Done` is rejected while any descendant, at
+// any depth, is not `Done` (design §4.3). Other statuses skip the check
+// entirely: nothing prevents moving a parent back to `To-do`.
 tasksRouter.patch(
   '/tasks/:id/status',
   asyncHandler(async (req, res) => {
@@ -128,8 +143,7 @@ tasksRouter.patch(
 
     const parsed = updateTaskStatusSchema.safeParse(req.body);
     if (!parsed.success) {
-      const message = parsed.error.issues.map((issue) => issue.message).join('; ');
-      throw AppError.validation(message);
+      throw AppError.validation(formatValidationIssues(parsed.error));
     }
     const { status } = parsed.data;
 
@@ -137,6 +151,16 @@ tasksRouter.patch(
     const task = existingRows.find((row) => row.id === id);
     if (!task) {
       throw AppError.notFound(`No task with id ${id}`);
+    }
+
+    if (status === 'Done') {
+      const blocking = await countBlockingDescendants(pool, id);
+      if (blocking > 0) {
+        const plural = blocking > 1 ? 's are' : ' is';
+        throw AppError.subtasksNotDone(
+          `Cannot mark "${task.title}" as Done: ${blocking} subtask${plural} not Done`,
+        );
+      }
     }
 
     await updateTaskStatus(pool, id, status);

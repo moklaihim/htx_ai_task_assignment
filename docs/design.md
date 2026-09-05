@@ -414,6 +414,17 @@ Example of a node where inference failed:
 }
 ```
 
+**Implementation (phase 5).** The recursive `subtasks` array is expressed with
+`z.lazy` in `src/schemas/task.ts` — a `z.object({...})` literal cannot reference the
+const it is being assigned to, so the self-reference is deferred to parse time, with
+an explicit `z.ZodType<CreateTaskRequest, z.ZodTypeDef, CreateTaskInput>` annotation
+because TypeScript cannot infer a type defined in terms of itself. One schema applied
+at every level is what makes a malformed node rejected at *any* depth. Validation
+messages are built by `formatValidationIssues`, which prefixes each issue with its
+path (`subtasks.0.subtasks.1.title: title must not be empty`) — without the path, a
+failure deep inside a tree would report only "title must not be empty" and leave the
+caller no way to tell which node was bad.
+
 **Error shape**, consistent across all endpoints:
 
 ```json
@@ -511,6 +522,18 @@ wrongly allowed the change.
 Statuses other than `Done` skip the check entirely — nothing prevents moving a parent
 back to `To-do`.
 
+**Implementation (phase 5).** `countBlockingDescendants(pool, id)` in
+`src/db/tasks.ts` holds the query; `PATCH /tasks/:id/status` calls it only when the
+requested status is `Done`, after the 404 check and before the write, and turns a
+non-zero count into `400 SUBTASKS_NOT_DONE` with the count in the message. It counts
+rather than returning the offending rows because the caller needs only a yes/no.
+
+Note that the worked example's state — a `Done` child above a `To-do` grandchild — is
+reachable precisely *because* the rule is one-directional: it is produced by marking
+the grandchild `Done`, then the child `Done`, then moving the grandchild back to
+`To-do`. Marking the child `Done` while its own child was still `To-do` would itself
+have been rejected by the same rule.
+
 ### 4.4 Reading trees
 
 SQL returns rows, not nested objects, so a tree is fetched flat and assembled in
@@ -534,12 +557,18 @@ FROM tree
 LEFT JOIN developers  d  ON d.id  = tree.assignee_id
 LEFT JOIN task_skills ts ON ts.task_id = tree.id
 LEFT JOIN skills      s  ON s.id  = ts.skill_id
-GROUP BY tree.id, tree.title, tree.status, tree.parent_task_id, d.id, d.name;
+GROUP BY tree.id, tree.title, tree.status, tree.parent_task_id, d.id, d.name
+ORDER BY tree.id;
 ```
 
 `json_agg … FILTER` collects each task's skills into one JSON array in the same
 query, so there is no second round trip and no N+1. `COALESCE(…, '[]')` turns a task
-with no skills into an empty array rather than `[null]`.
+with no skills into an empty array rather than `[null]`. `ORDER BY tree.id` (added in
+phase 5, once trees could actually have more than one child) makes the response
+deterministic: a recursive CTE has no defined row order and `buildForest` preserves
+whatever order it is handed, so without it a task's subtasks could come back in a
+different order on each request. Ordering by id is creation order, which for a tree
+written by one depth-first `insertTaskTree` is the order the user entered the nodes in.
 
 **Row mapping.** With no ORM, nothing converts column names automatically: `pg`
 returns keys exactly as the database names them, so a row arrives as
@@ -603,12 +632,10 @@ aggregate per row.
 
 ### 4.5 Creating a tree (REQ-2.1, REQ-5.7)
 
-**Phase 3 implements a flat subset of this** (3.5): `POST /tasks` accepts only
-`title` and `skillIds` — no `subtasks`, no LLM inference — so steps 1–3 below and the
-recursive insert in step 4 do not apply yet. `insertFlatTask` (`src/db/tasks.ts`)
-still opens one transaction for its two writes (`INSERT INTO tasks`, then each
-`INSERT INTO task_skills`), so a bad skill id slipping past validation can't leave a
-task row with no skills behind. The full recursive version below is built in phase 5.
+**Phase 3 implemented a flat subset of this**: `POST /tasks` accepted only `title`
+and `skillIds`, via an `insertFlatTask` that opened a transaction for its two writes.
+**Phase 5 replaced it** with the full recursive version below (`insertTaskTree` in
+`src/db/tasks.ts`); LLM inference (steps 2–3) still arrives in phase 6.
 
 The whole tree is created inside **one database transaction**, so a failure part-way
 leaves nothing behind rather than a half-built tree:
@@ -629,6 +656,22 @@ connection locked for as long as the slowest LLM response takes.
 All queries in one request use a single client checked out from the `pg` Pool, since
 `BEGIN`/`COMMIT` are connection-scoped — issuing them on pooled connections at random
 would not form a transaction.
+
+**Implementation (phase 5).** `insertTaskTree(pool, root)` checks out one client,
+`BEGIN`s, and hands it to a private `insertTaskNode(client, node, parentTaskId)` that
+inserts the task row, takes the id from `RETURNING`, writes that node's `task_skills`
+rows, then recurses into each child with that id as `parent_task_id`. Its awaits are
+sequential rather than `Promise.all`: one `pg` client is one connection and cannot run
+queries concurrently, and this is the client the transaction is open on. `ROLLBACK` on
+any error, `client.release()` in `finally`, so a failed tree neither leaves rows behind
+nor leaks the connection.
+
+Step 1's validation is extended slightly beyond the schema: `collectSkillIds`
+(`src/services/collectSkillIds.ts`) gathers the de-duplicated skill ids from *every*
+node in the tree, and `findMissingSkillIds` checks them in one round trip before the
+transaction opens. Checking only the root's ids would let a bad id on a grandchild
+through to surface as a foreign-key violation mid-insert — a `500` where the contract
+calls for a `400 VALIDATION_ERROR`.
 
 ---
 
@@ -750,14 +793,15 @@ App
     └── SaveButton
 ```
 
-**Implementation (phase 4).** Phase 4 is flat tasks only, so `TaskCreationPage`
-renders a plain title `<input>` and `SkillMultiSelect` directly rather than
-`TaskFormNode` — the recursive form node arrives in phase 5 once subtasks exist,
-and `SkillMultiSelect` is written now so phase 5 can reuse it unchanged inside
-`TaskFormNode` (see §6.3's snippet, which already assumes it). "Save" is a plain
-`<button type="submit">` inside the form rather than a separate `SaveButton`
-component — it holds no state of its own beyond the surrounding form's, so a
-dedicated component would only add a file with no behavior in it.
+**Implementation (phase 4, superseded in phase 5).** Phase 4 was flat tasks only, so
+`TaskCreationPage` rendered a plain title `<input>` and `SkillMultiSelect` directly,
+with `SkillMultiSelect` written so phase 5 could reuse it unchanged inside
+`TaskFormNode`. **Phase 5 replaced that** with the recursive `TaskFormNode` and a
+single `DraftNode` tree in `useState`, as §6.3 describes; `SkillMultiSelect` was
+indeed reused unmodified. "Save" is a plain `<button type="submit">` inside the form
+rather than a separate `SaveButton` component — it holds no state of its own beyond
+the surrounding form's, so a dedicated component would only add a file with no
+behavior in it.
 
 `Toaster` is a module-level publish/subscribe store (`toast.success`/`toast.error`
 functions plus a `Toaster` component that subscribes to them) rather than a React
@@ -766,10 +810,17 @@ outside `App`'s render tree, like a future non-component caller — raise a toas
 without needing to be rendered under a `<ToastProvider>`, and keeps `Toaster` a
 plain sibling of the pages exactly as drawn above.
 
-`TaskRow` already recurses over `task.subtasks` in phase 4, even though nothing has
-subtasks yet (every node's `subtasks` array is empty) — the recursion is free
-(REQ-2.2's response shape always includes `subtasks: []`) and means phase 5 needs no
-change to this component when nesting arrives.
+`TaskRow` already recursed over `task.subtasks` in phase 4, even though nothing had
+subtasks then (every node's `subtasks` array was empty) — the recursion was free
+(REQ-2.2's response shape always includes `subtasks: []`) and meant phase 5 needed no
+structural change to this component when nesting arrived.
+
+**Implementation (phase 5).** Phase 5 added only presentation to it: an outline
+number (`1`, `1.1`, `1.1.1`, matching the PDF wireframe) built from the parent's
+outline plus the child's index, and `aria-level`. Indentation alone is a weak cue in
+a flat `<table>`, where every row is a DOM sibling whatever it is in the data, and it
+conveys nothing to a screen reader — the outline states the nesting, and `aria-level`
+exposes the depth that the visual indent gives everyone else.
 
 ### 6.3 `TaskFormNode` — one component, every depth (REQ-5.6)
 
@@ -825,7 +876,12 @@ type DraftNode = {
 ```
 
 `localId` exists because nodes need stable React `key`s before the server has
-assigned real `id`s. It is stripped before sending.
+assigned real `id`s. It is stripped before sending, by `toCreateTaskInput`, which is
+the *only* transformation submit performs — the draft shape is otherwise already the
+request body, which is what keeps the whole tree to one `POST` (REQ-5.7). Verified in
+the browser against the running stack: building a four-node, three-level tree and
+clicking Save issues exactly one `POST /api/tasks`, whose body is the full nested
+structure with per-node `skillIds` and no `localId` anywhere.
 
 **Adding a subtask** (REQ-5.5) walks the tree to the node with the matching
 `localId` and appends to *that node's* `subtasks` array — not the root's. This is
@@ -842,6 +898,31 @@ function addSubtaskTo(node: DraftNode, targetId: string): DraftNode {
 
 Updates are immutable (new objects rather than mutation) so React re-renders
 correctly.
+
+**Implementation (phase 5).** `TaskFormNode` (`src/components/TaskFormNode.tsx`)
+takes one extra prop over the sketch above — `skills`, the Skill catalogue fetched
+once by the page — because `SkillMultiSelect` renders a checkbox per Skill and a
+node-level component should not each fetch it. The state helpers (`DraftNode`,
+`emptyNode`, `addSubtaskTo`, `replaceChild`, `toCreateTaskInput`) live together in
+`src/lib/draftTree.ts` rather than inside the component, so they are plain functions
+testable without rendering.
+
+Two details worth naming:
+
+- `onAddSubtask` is passed straight down, unwrapped, while `onChange` is wrapped in
+  `replaceChild` at each level. They differ because they address nodes differently:
+  `onChange` receives an updated *self* and has to fold it into its parent one hop at
+  a time, whereas `onAddSubtask` carries a `localId` that the page resolves against
+  the whole tree with `addSubtaskTo`. Wrapping `onAddSubtask` the same way would
+  re-target the click at whichever node handled the callback — precisely the
+  "adds to the root instead of that node" bug REQ-5.5 rules out.
+- `newLocalId()` falls back to a page-local counter where `crypto.randomUUID` is
+  undefined. Compose serves the SPA on `http://localhost:3000`, which is a secure
+  context, but a reviewer opening it over a LAN address would otherwise crash on the
+  first render.
+
+Nodes carry `data-testid="task-form-node"` and `data-depth`, which is what the
+end-to-end run asserts nesting against.
 
 ### 6.4 The Update-button pattern (REQ-3.2–3.6)
 
