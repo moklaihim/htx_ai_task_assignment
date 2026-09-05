@@ -810,10 +810,17 @@ outside `App`'s render tree, like a future non-component caller — raise a toas
 without needing to be rendered under a `<ToastProvider>`, and keeps `Toaster` a
 plain sibling of the pages exactly as drawn above.
 
-`TaskRow` already recurses over `task.subtasks` in phase 4, even though nothing has
-subtasks yet (every node's `subtasks` array is empty) — the recursion is free
-(REQ-2.2's response shape always includes `subtasks: []`) and means phase 5 needs no
-change to this component when nesting arrives.
+`TaskRow` already recursed over `task.subtasks` in phase 4, even though nothing had
+subtasks then (every node's `subtasks` array was empty) — the recursion was free
+(REQ-2.2's response shape always includes `subtasks: []`) and meant phase 5 needed no
+structural change to this component when nesting arrived.
+
+**Implementation (phase 5).** Phase 5 added only presentation to it: an outline
+number (`1`, `1.1`, `1.1.1`, matching the PDF wireframe) built from the parent's
+outline plus the child's index, and `aria-level`. Indentation alone is a weak cue in
+a flat `<table>`, where every row is a DOM sibling whatever it is in the data, and it
+conveys nothing to a screen reader — the outline states the nesting, and `aria-level`
+exposes the depth that the visual indent gives everyone else.
 
 ### 6.3 `TaskFormNode` — one component, every depth (REQ-5.6)
 
