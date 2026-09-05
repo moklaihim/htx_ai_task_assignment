@@ -1,4 +1,5 @@
 import type { CreateTaskRequest } from '../schemas/task.js';
+import type { TaskNode } from '../types/task.js';
 
 /**
  * Skill inference for a whole `POST /tasks` tree (design §4.5 steps 2–3,
@@ -100,4 +101,47 @@ export async function inferMissingSkills(
   });
 
   return failures;
+}
+
+/**
+ * Copies the failures onto the response tree as `skillInferenceFailed: true`
+ * (REQ-6.6, design §4.1).
+ *
+ * Response-only, by design: the flag describes what happened during this one
+ * request, not a property of the task, so it is never stored and never appears
+ * in a `GET`. Without it the frontend could not tell "the LLM was tried and
+ * couldn't classify this" from "this task simply has no skills" — both are an
+ * empty `skills` array — and REQ-4.6's notification would have nothing to key
+ * off.
+ *
+ * The two trees are walked in lockstep, which is sound because they are the
+ * same tree twice: `insertTaskTree` writes depth-first, ids therefore ascend in
+ * request order, and the read path orders by id (design §4.4), so
+ * `response.subtasks[i]` is the row created from `request.subtasks[i]`.
+ * Matching on title instead would mark the wrong node whenever a user gives two
+ * subtasks the same name.
+ */
+export function markInferenceFailures(
+  request: CreateTaskRequest,
+  response: TaskNode,
+  failures: InferenceFailure[],
+): void {
+  if (failures.length === 0) {
+    return;
+  }
+
+  const failed = new Set(failures.map((failure) => failure.node));
+
+  const visit = (requestNode: CreateTaskRequest, responseNode: TaskNode) => {
+    if (failed.has(requestNode)) {
+      responseNode.skillInferenceFailed = true;
+    }
+
+    const pairs = Math.min(requestNode.subtasks.length, responseNode.subtasks.length);
+    for (let i = 0; i < pairs; i += 1) {
+      visit(requestNode.subtasks[i]!, responseNode.subtasks[i]!);
+    }
+  };
+
+  visit(request, response);
 }

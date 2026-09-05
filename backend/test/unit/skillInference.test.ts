@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   collectNodesNeedingSkills,
   inferMissingSkills,
+  markInferenceFailures,
 } from '../../src/services/skillInference.js';
 import type { CreateTaskRequest } from '../../src/schemas/task.js';
+import type { TaskNode } from '../../src/types/task.js';
 
 /** A parsed `POST /tasks` node, with the schema's defaults already applied. */
 function node(
@@ -141,5 +143,63 @@ describe('inferMissingSkills (6.5, REQ-6.2)', () => {
         throw new Error('everything is down');
       }),
     ).resolves.toHaveLength(2);
+  });
+});
+
+describe('markInferenceFailures (6.6, REQ-6.6)', () => {
+  /** A response node as `buildForest` produces it. */
+  function responseNode(id: number, title: string, subtasks: TaskNode[] = []): TaskNode {
+    return {
+      id,
+      title,
+      status: 'To-do',
+      parentTaskId: null,
+      assignee: null,
+      skills: [],
+      subtasks,
+    };
+  }
+
+  it('flags only the nodes that failed, at any depth', async () => {
+    const grandchild = node('Grandchild');
+    const tree = node('Root', [], [node('Child A'), node('Child B', [], [grandchild])]);
+    const response = responseNode(1, 'Root', [
+      responseNode(2, 'Child A'),
+      responseNode(3, 'Child B', [responseNode(4, 'Grandchild')]),
+    ]);
+
+    const failures = await inferMissingSkills(collectNodesNeedingSkills(tree), async (title) => {
+      if (title === 'Root' || title === 'Grandchild') throw new Error('boom');
+      return [1];
+    });
+    markInferenceFailures(tree, response, failures);
+
+    expect(response.skillInferenceFailed).toBe(true);
+    expect(response.subtasks[0]!.skillInferenceFailed).toBeUndefined();
+    expect(response.subtasks[1]!.skillInferenceFailed).toBeUndefined();
+    expect(response.subtasks[1]!.subtasks[0]!.skillInferenceFailed).toBe(true);
+  });
+
+  it('flags by position, not by title, so duplicate titles do not cross-contaminate', async () => {
+    const tree = node('Root', [1], [node('Same'), node('Same')]);
+    const response = responseNode(1, 'Root', [responseNode(2, 'Same'), responseNode(3, 'Same')]);
+
+    // Only the *second* "Same" fails.
+    const nodes = collectNodesNeedingSkills(tree);
+    const failures = await inferMissingSkills(nodes, async () => []);
+    failures.splice(0, 1);
+    markInferenceFailures(tree, response, failures);
+
+    expect(response.subtasks[0]!.skillInferenceFailed).toBeUndefined();
+    expect(response.subtasks[1]!.skillInferenceFailed).toBe(true);
+  });
+
+  it('leaves the field absent entirely when nothing failed', async () => {
+    const tree = node('Root');
+    const response = responseNode(1, 'Root');
+
+    markInferenceFailures(tree, response, []);
+
+    expect('skillInferenceFailed' in response).toBe(false);
   });
 });
