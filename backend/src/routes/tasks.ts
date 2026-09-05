@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { getAllTaskRows, getTaskTreeRows, insertTaskTree, updateTaskAssignee, updateTaskStatus } from '../db/tasks.js';
+import {
+  countBlockingDescendants,
+  getAllTaskRows,
+  getTaskTreeRows,
+  insertTaskTree,
+  updateTaskAssignee,
+  updateTaskStatus,
+} from '../db/tasks.js';
 import { findMissingSkillIds } from '../db/skills.js';
 import { getDeveloperById } from '../db/developers.js';
 import { buildForest } from '../services/buildForest.js';
@@ -123,8 +130,9 @@ tasksRouter.patch(
   }),
 );
 
-// REQ-2.5 (partial) — no subtask/`SUBTASKS_NOT_DONE` check yet; nothing can
-// have subtasks until phase 5 (design §4.3 is implemented then).
+// REQ-2.5, REQ-5.3 — a change to `Done` is rejected while any descendant, at
+// any depth, is not `Done` (design §4.3). Other statuses skip the check
+// entirely: nothing prevents moving a parent back to `To-do`.
 tasksRouter.patch(
   '/tasks/:id/status',
   asyncHandler(async (req, res) => {
@@ -143,6 +151,16 @@ tasksRouter.patch(
     const task = existingRows.find((row) => row.id === id);
     if (!task) {
       throw AppError.notFound(`No task with id ${id}`);
+    }
+
+    if (status === 'Done') {
+      const blocking = await countBlockingDescendants(pool, id);
+      if (blocking > 0) {
+        const plural = blocking > 1 ? 's are' : ' is';
+        throw AppError.subtasksNotDone(
+          `Cannot mark "${task.title}" as Done: ${blocking} subtask${plural} not Done`,
+        );
+      }
     }
 
     await updateTaskStatus(pool, id, status);

@@ -81,9 +81,41 @@ export async function updateTaskAssignee(
 }
 
 /**
- * Sets a task's status (`PATCH /tasks/:id/status`, REQ-2.5 — partial: the
- * caller is responsible for the recursive Done-rule check once subtasks exist
- * (phase 5); this function performs the write only.
+ * How many descendants of `id`, at **any** depth, are not yet `Done`
+ * (design §4.3, REQ-5.3). `> 0` means a status change to `Done` must be
+ * rejected with `400 SUBTASKS_NOT_DONE`.
+ *
+ * The traversal happens in the database, in one recursive CTE and one round
+ * trip regardless of depth or size — walking level by level in application
+ * code would be one query per level. Checking only direct children would be
+ * wrong: a child can be `Done` while its own child is not, so the anchor term
+ * finds the children and the recursive term keeps joining grandchildren,
+ * great-grandchildren and so on onto the rows already found.
+ *
+ * Counts, rather than returning the offending rows, because the caller only
+ * needs a yes/no — the count doubles as the number quoted in the message.
+ */
+export async function countBlockingDescendants(pool: Pool, id: number): Promise<number> {
+  const { rows } = await pool.query<{ blocking: number }>(
+    `
+    WITH RECURSIVE descendants AS (
+      SELECT id, status FROM tasks WHERE parent_task_id = $1
+      UNION ALL
+      SELECT t.id, t.status
+      FROM tasks t
+      JOIN descendants d ON t.parent_task_id = d.id
+    )
+    SELECT COUNT(*)::int AS blocking FROM descendants WHERE status <> 'Done'
+  `,
+    [id],
+  );
+  return rows[0]!.blocking;
+}
+
+/**
+ * Sets a task's status (`PATCH /tasks/:id/status`, REQ-2.5). The caller is
+ * responsible for having already run the recursive Done-rule check
+ * (`countBlockingDescendants`) — this function performs the write only.
  */
 export async function updateTaskStatus(pool: Pool, id: number, status: TaskStatus): Promise<void> {
   await pool.query('UPDATE tasks SET status = $2 WHERE id = $1', [id, status]);

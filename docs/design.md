@@ -522,6 +522,18 @@ wrongly allowed the change.
 Statuses other than `Done` skip the check entirely — nothing prevents moving a parent
 back to `To-do`.
 
+**Implementation (phase 5).** `countBlockingDescendants(pool, id)` in
+`src/db/tasks.ts` holds the query; `PATCH /tasks/:id/status` calls it only when the
+requested status is `Done`, after the 404 check and before the write, and turns a
+non-zero count into `400 SUBTASKS_NOT_DONE` with the count in the message. It counts
+rather than returning the offending rows because the caller needs only a yes/no.
+
+Note that the worked example's state — a `Done` child above a `To-do` grandchild — is
+reachable precisely *because* the rule is one-directional: it is produced by marking
+the grandchild `Done`, then the child `Done`, then moving the grandchild back to
+`To-do`. Marking the child `Done` while its own child was still `To-do` would itself
+have been rejected by the same rule.
+
 ### 4.4 Reading trees
 
 SQL returns rows, not nested objects, so a tree is fetched flat and assembled in
