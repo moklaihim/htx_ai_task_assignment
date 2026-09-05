@@ -37,7 +37,6 @@ Important Notes is checked against.
 | 7.5 | Confirm `.env.example` lists every variable the app reads, and that changing `LLM_API_KEY` needs no rebuild. | REQ-7.5 | Change key → `docker-compose up` → new key in use |
 | 7.6 | README: setup and run, architecture, data model, API reference, library justifications from design §2, and the assumptions from `requirements.md` §10. | REQ-8.1–8.5 | — |
 | 7.7 | Full clean-clone rehearsal into an empty directory, following only the README. | REQ-7.4 | Exactly the four commands in design §7.3 |
-| 7.8 | Push to the public remote. Send the repo link and the API key to the four addresses in the PDF. | Part 7.2 | Key sent separately from the repo, never committed |
 
 **Exit check**
 - [ ] All eight e2e scenarios pass against a freshly built stack
@@ -54,12 +53,13 @@ Important Notes is checked against.
 
 ## Final traceability check
 
-Before sending, walk `requirements.md` top to bottom and point each requirement at
-the thing that satisfies it — an endpoint, a component, a test, or a README section.
-Anything you cannot point at is unfinished, regardless of how complete the code
-looks. This is the same check the panel will perform against the PDF, run one step
-earlier.
+Before you push and submit manually, walk `requirements.md` top to bottom and point
+each requirement at the thing that satisfies it — an endpoint, a component, a test,
+or a README section. Anything you cannot point at is unfinished, regardless of how
+complete the code looks. This is the same check the panel will perform against the
+PDF, run one step earlier.
 
 Two easy things to miss, both from the PDF's own Part 7: the README must justify the
-library choices (REQ-8.4), and the repository must actually be public — a private
-repo the panel cannot open fails everything else by default.
+library choices (REQ-8.4), and — when you push manually — the repository must
+actually be public, since a private repo the panel cannot open fails everything
+else by default.
