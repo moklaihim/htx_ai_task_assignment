@@ -1,18 +1,17 @@
 #!/bin/sh
-# Runs on every container start (design §7.3): migrate, then seed, then serve.
-# Both steps are idempotent, so restarting against an existing volume is a no-op.
-# The guards let this same entrypoint work in phase 1, before the migration
-# runner and seed exist.
+# Container CMD (design §3.3, §7.3): migrate, then seed, then serve — on every
+# start. Both steps are idempotent, so restarting against an existing volume is a
+# no-op rather than an error (REQ-7.4).
+#
+# set -e stops the chain if any step fails: a broken migration must not be
+# followed by a seed attempt against a schema that isn't there.
 set -e
 
-if [ -f dist/db/migrate.js ]; then
-  echo "running migrations..."
-  node dist/db/migrate.js
-fi
+echo "entrypoint: running migrations..."
+node dist/db/migrate.js
 
-if [ -f dist/db/seed.js ]; then
-  echo "running seed..."
-  node dist/db/seed.js
-fi
+echo "entrypoint: running seed..."
+node dist/db/seed.js
 
-exec node dist/index.js
+echo "entrypoint: starting server..."
+exec node dist/src/index.js
