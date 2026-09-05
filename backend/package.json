@@ -14,9 +14,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:unit": "vitest run test/unit",
-    "test:integration": "vitest run test/integration",
-    "test:db:up": "./test/docker-postgres.sh up",
-    "test:db:down": "./test/docker-postgres.sh down"
+    "test:integration": "vitest run test/integration"
   },
   "dependencies": {
     "express": "^4.21.2",

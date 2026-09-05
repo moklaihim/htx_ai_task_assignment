@@ -993,20 +993,9 @@ to whatever `DATABASE_URL` happened to be set to first. It then runs
 `runMigrations`/`runSeed` and calls `app.listen(0)` for an ephemeral port. Each
 integration test file calls this once in a top-level `beforeAll`; Vitest resets the
 module registry between test files, so each file's dynamic imports are independent
-even when files run concurrently.
-
-**The harness code itself has no Docker dependency** — it only needs a Postgres
-reachable at `DATABASE_URL` (REQ-0.9's "runs without Docker" refers to this: the
-*test runner* doesn't shell out to `docker-compose`, unlike the E2E layer in 8.3).
-That Postgres can be anything that accepts the connection string: the project does
-**not** require a host Postgres install for this. `backend/test/docker-postgres.sh`
-(wired to `npm run test:db:up` / `test:db:down`) runs a disposable `postgres:16-alpine`
-container — the same image `docker-compose.yml` uses — published on `localhost:5432`,
-which is the recommended way to get a reachable Postgres for a local `npm test` run
-without installing anything beyond the Docker Desktop the rest of the project already
-depends on. The harness needs no code change either way: whether that Postgres is a
-one-off container, the compose `db` service (with its port published), or a CI-managed
-Postgres service, `DATABASE_URL` is all it reads.
+even when files run concurrently. No Docker is required — only a reachable Postgres
+server (REQ-0.9) — so this also runs against a plain local `postgresql@16` install,
+not just the compose `db` service.
 
 Phase 3 (3.10) covers what phase 3 actually implements — flat tasks, no subtasks,
 no LLM:
