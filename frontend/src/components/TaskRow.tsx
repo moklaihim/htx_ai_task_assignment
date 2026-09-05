@@ -26,8 +26,13 @@ export function TaskRow({ task, developers, onTaskUpdated, outline, depth = 0 }:
   return (
     <>
       <tr data-testid="task-row" data-depth={depth} aria-level={depth + 1}>
-        <td style={{ paddingLeft: `${depth * 1.5}rem` }} data-testid="task-title">
-          <span style={{ color: '#777', marginRight: '0.5rem' }} data-testid="task-outline">
+        {/* Indent is data-driven (tree depth), so it stays inline; everything
+            static about the cell lives in the stylesheet. */}
+        <td
+          style={{ paddingLeft: `calc(1rem + ${depth * 1.5}rem)` }}
+          data-testid="task-title"
+        >
+          <span className="task-outline" data-testid="task-outline">
             {outline}
           </span>
           {task.title}

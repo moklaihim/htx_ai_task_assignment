@@ -1,0 +1,462 @@
+/*
+ * Slate Minimal — the app's only stylesheet.
+ *
+ * Hand-written CSS rather than a component library (see README, "Library
+ * Justifications"): the UI is two pages of tables, form fields and buttons,
+ * which the platform already provides — a component library would ship a
+ * design system, a theming layer and a peer-dependency tree to restyle them.
+ *
+ * Everything below is driven by the tokens in `:root`, so the palette, the
+ * corner radius and the type scale each have exactly one definition. Layout
+ * that depends on runtime data (indent by tree depth) stays inline in the
+ * components; everything static lives here.
+ */
+
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-sunken: #fbfcfd;
+  --border: #dce0e6;
+  --border-strong: #c3c9d4;
+  --text: #1f2430;
+  --muted: #6b7280;
+  --accent: #45507a;
+  --accent-hover: #363f63;
+  --accent-ink: #ffffff;
+  --accent-soft: #eef0f6;
+  --accent-soft-border: #d6daea;
+  --success: #2f7d5b;
+  --danger: #b23a2e;
+  --danger-soft: #fdf3f2;
+  --danger-soft-border: #e6c4bf;
+
+  --radius: 4px;
+  --shadow-card: 0 1px 2px rgba(31, 36, 48, 0.06);
+  --shadow-float: 0 4px 14px rgba(31, 36, 48, 0.18);
+
+  --font-ui: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The design commits to a light surface; declaring it keeps the native
+   * <select> and checkbox chrome light on a dark-mode OS instead of rendering
+   * dark controls on these light panels. */
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:where(a) {
+  color: var(--accent);
+}
+
+:where(button, select, input, a):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- nav bar */
+
+.app-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-nav__inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  display: flex;
+  align-items: stretch;
+  gap: 1.5rem;
+  height: 52px;
+}
+
+.app-nav__brand {
+  display: flex;
+  align-items: center;
+  margin-right: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  letter-spacing: -0.01em;
+}
+
+.app-nav__link {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: color 120ms ease;
+}
+
+.app-nav__link:hover {
+  color: var(--text);
+}
+
+/* React Router's NavLink adds `active` on the matching route. */
+.app-nav__link.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* ------------------------------------------------------------ page shell */
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.page__title {
+  margin: 0 0 1.25rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.panel--padded {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.panel__scroll {
+  overflow-x: auto;
+}
+
+.empty-state {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.alert-error {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-soft-border);
+  border-radius: var(--radius);
+  color: #8f2f24;
+}
+
+/* --------------------------------------------------------------- task table */
+
+.task-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.task-table th {
+  padding: 0.6875rem 1rem;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Give the title room without starving the Skills column, which otherwise
+ * wraps a two-tag list onto a second line and makes rows uneven. */
+.task-table th:nth-child(1) {
+  width: 34%;
+}
+
+.task-table th:nth-child(2) {
+  width: 22%;
+}
+
+.task-table td {
+  padding: 0.5625rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  font-size: 0.9375rem;
+}
+
+.task-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.task-table tbody tr:hover td {
+  background: var(--surface-sunken);
+}
+
+.task-outline {
+  margin-right: 0.5rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- skill tags */
+
+.skill-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.skill-tag {
+  padding: 0.0625rem 0.4375rem;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-border);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.skill-tags--empty {
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ row controls */
+
+.control-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Status as color as well as text, so a long list reads at a glance. These
+ * are semantic (state) colors, deliberately not the accent. */
+.status-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9aa1ad;
+}
+
+.status-dot--in-progress {
+  background: var(--accent);
+}
+
+.status-dot--done {
+  background: var(--success);
+}
+
+/* ------------------------------------------------------------ form controls */
+
+.select,
+.text-input {
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0.3125rem 0.5rem;
+}
+
+.select:disabled,
+.text-input:disabled {
+  background: #f2f3f6;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.text-input {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  padding: 0.4375rem 0.625rem;
+}
+
+.text-input::placeholder {
+  color: #9aa1ad;
+}
+
+.btn {
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.3125rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn--secondary {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: #f2f3f6;
+  border-color: #aab1c0;
+}
+
+.btn--sm {
+  padding: 0.25rem 0.5625rem;
+  font-size: 0.8125rem;
+}
+
+/* ------------------------------------------------------- task creation form */
+
+.task-form-node {
+  margin-top: 0.875rem;
+}
+
+/* Every node but the root sits under a rule that traces it back to its
+ * parent; `data-depth` is set by the component for exactly this. */
+.task-form-node:not([data-depth='0']) {
+  padding-left: 0.875rem;
+  border-left: 2px solid var(--border);
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 0.3125rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.skills-fieldset {
+  max-width: 360px;
+  margin: 0.75rem 0;
+  padding: 0.625rem 0.875rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.skills-fieldset legend {
+  padding: 0 0.3125rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.skill-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 1.125rem;
+}
+
+.skill-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.skill-option input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ------------------------------------------------------------------ toasts */
+
+.toaster {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toast {
+  min-width: 240px;
+  max-width: 360px;
+  padding: 0.6875rem 1rem;
+  border-radius: var(--radius);
+  color: #ffffff;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  box-shadow: var(--shadow-float);
+  cursor: pointer;
+  animation: toast-in 140ms ease-out;
+}
+
+.toast--success {
+  background: var(--success);
+}
+
+.toast--error {
+  background: var(--danger);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+  .app-nav__link,
+  .btn {
+    transition: none;
+  }
+}

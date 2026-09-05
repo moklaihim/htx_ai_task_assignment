@@ -40,11 +40,15 @@ export function TaskListPage() {
   }
 
   return (
-    <main>
-      <h1>Task List</h1>
-      {error && <p role="alert">{error}</p>}
-      {!error && !tasks && <p>Loading…</p>}
-      {tasks && tasks.length === 0 && <p>No tasks yet.</p>}
+    <main className="page">
+      <h1 className="page__title">Task List</h1>
+      {error && (
+        <p role="alert" className="alert-error">
+          {error}
+        </p>
+      )}
+      {!error && !tasks && <p className="empty-state">Loading…</p>}
+      {tasks && tasks.length === 0 && <p className="empty-state">No tasks yet.</p>}
       {tasks && tasks.length > 0 && developers && (
         <TaskTable tasks={tasks} developers={developers} onTaskUpdated={handleTaskUpdated} />
       )}

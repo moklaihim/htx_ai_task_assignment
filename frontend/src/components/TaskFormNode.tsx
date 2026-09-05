@@ -38,17 +38,14 @@ export function TaskFormNode({ node, skills, onChange, onAddSubtask, depth = 0 }
       data-testid="task-form-node"
       data-depth={depth}
       data-local-id={node.localId}
-      style={{
-        marginLeft: depth * 24,
-        marginTop: '0.75rem',
-        paddingLeft: depth > 0 ? '0.75rem' : 0,
-        borderLeft: depth > 0 ? '2px solid #ccc' : undefined,
-      }}
+      // Indent is data-driven (nesting depth); the rule and spacing that go
+      // with it are in the stylesheet, keyed off `data-depth`.
+      style={{ marginLeft: depth * 24 }}
     >
-      <label style={{ display: 'block' }}>
-        {label}
-        <br />
+      <label>
+        <span className="field-label">{label}</span>
         <input
+          className="text-input"
           value={node.title}
           onChange={(e) => onChange({ ...node, title: e.target.value })}
           placeholder={depth === 0 ? 'Task title' : 'Subtask title'}
@@ -64,10 +61,10 @@ export function TaskFormNode({ node, skills, onChange, onAddSubtask, depth = 0 }
       />
 
       <button
+        className="btn btn--secondary btn--sm"
         type="button"
         onClick={() => onAddSubtask(node.localId)}
         data-testid="add-subtask"
-        style={{ marginTop: '0.25rem' }}
       >
         Add Subtask
       </button>

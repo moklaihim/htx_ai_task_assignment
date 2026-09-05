@@ -121,6 +121,16 @@ Everything below is a real choice, with the reasoning REQ-8.4 asks to be documen
 call it with Node's built-in global `fetch`. Supertest would only wrap that in a
 chainable assertion API — one more dependency for no capability the tests need.
 
+**Not used: a CSS or component library.** The UI is two pages of tables, form
+fields and buttons — elements the platform already provides. A component library
+(MUI, Chakra) would add a design system, a theming layer and a peer-dependency
+tree to restyle them; Tailwind would add a build step and put the same tokens in
+every `className` instead of one place. `frontend/src/styles.css` is a single
+hand-written stylesheet instead: a `:root` token block (palette, radius, type,
+shadows) and component classes that consume it, so the palette and spacing scale
+each have exactly one definition. Only layout that depends on runtime data — the
+indent of a subtask row by its tree depth — stays inline in the components.
+
 ---
 
 ## 3. Database Design

@@ -1,4 +1,4 @@
-import { Link, NavLink, Route, Routes } from 'react-router-dom';
+import { NavLink, Route, Routes } from 'react-router-dom';
 import { TaskListPage } from './pages/TaskListPage';
 import { TaskCreationPage } from './pages/TaskCreationPage';
 import { Toaster } from './components/Toaster';
@@ -10,11 +10,18 @@ export default function App() {
   return (
     <>
       <Toaster />
-      <nav style={{ display: 'flex', gap: '1rem', padding: '1rem', borderBottom: '1px solid #ddd' }}>
-        <NavLink to="/" end>
-          Tasks
-        </NavLink>
-        <Link to="/tasks/new">New Task</Link>
+      <nav className="app-nav">
+        <div className="app-nav__inner">
+          <span className="app-nav__brand">Task Assignment</span>
+          {/* NavLink applies its own `active` class on the matching route,
+              which the stylesheet turns into the underlined current tab. */}
+          <NavLink to="/" end className="app-nav__link">
+            Tasks
+          </NavLink>
+          <NavLink to="/tasks/new" className="app-nav__link">
+            New Task
+          </NavLink>
+        </div>
       </nav>
       <Routes>
         <Route path="/" element={<TaskListPage />} />

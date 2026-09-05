@@ -60,8 +60,9 @@ export function AssigneeControl({ task, developers, onTaskUpdated }: Props) {
   }
 
   return (
-    <span style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
+    <span className="control-pair">
       <select
+        className="select"
         aria-label={`Assignee for ${task.title}`}
         disabled={saving}
         value={selected === null ? UNASSIGNED : String(selected)}
@@ -74,7 +75,7 @@ export function AssigneeControl({ task, developers, onTaskUpdated }: Props) {
           </option>
         ))}
       </select>
-      <button disabled={!dirty || saving} onClick={submit}>
+      <button className="btn btn--secondary btn--sm" disabled={!dirty || saving} onClick={submit}>
         {saving ? 'Saving…' : 'Update'}
       </button>
     </span>

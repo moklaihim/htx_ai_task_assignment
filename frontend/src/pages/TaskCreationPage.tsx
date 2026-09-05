@@ -91,9 +91,9 @@ export function TaskCreationPage() {
   const total = countNodes(tree);
 
   return (
-    <main>
-      <h1>Create Task(s)</h1>
-      <form onSubmit={handleSubmit}>
+    <main className="page">
+      <h1 className="page__title">Create Task(s)</h1>
+      <form onSubmit={handleSubmit} className="panel panel--padded">
         {skills && (
           <TaskFormNode
             node={tree}
@@ -103,14 +103,16 @@ export function TaskCreationPage() {
           />
         )}
 
-        <button
-          type="submit"
-          disabled={saving || !everyTitleFilled(tree)}
-          data-testid="save-task"
-          style={{ marginTop: '1rem' }}
-        >
-          {saving ? 'Saving…' : total === 1 ? 'Save' : `Save ${total} tasks`}
-        </button>
+        <div className="form-actions">
+          <button
+            className="btn btn--primary"
+            type="submit"
+            disabled={saving || !everyTitleFilled(tree)}
+            data-testid="save-task"
+          >
+            {saving ? 'Saving…' : total === 1 ? 'Save' : `Save ${total} tasks`}
+          </button>
+        </div>
       </form>
     </main>
   );
