@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "rm -rf dist && tsc -p tsconfig.json && npm run copy:sql",
-    "copy:sql": "mkdir -p dist/db/migrations && cp db/migrations/*.sql dist/db/migrations/",
+    "copy:sql": "mkdir -p dist/db/migrations && cp db/migrations/*.sql dist/db/migrations/ && cp db/seed.sql dist/db/",
     "migrate": "tsx db/migrate.ts",
+    "seed": "tsx db/seed.ts",
     "start": "node dist/src/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
