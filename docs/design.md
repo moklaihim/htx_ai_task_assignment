@@ -52,6 +52,7 @@ depends on: a key shipped to the browser would be readable by anyone using the a
 │   └── specs/
 ├── backend/
 │   ├── Dockerfile
+│   ├── .dockerignore
 │   ├── entrypoint.sh          # CMD — runs migrate → seed → server (3.3, 7.2)
 │   ├── db/
 │   │   ├── migrations/       # 001_init.sql, 002_… — plain SQL, applied in order
@@ -59,7 +60,8 @@ depends on: a key shipped to the browser would be readable by anyone using the a
 │   │   ├── seed.sql          # idempotent data (REQ-1.9)
 │   │   └── seed.ts           # thin runner: reads seed.sql, executes it via `pg`
 │   └── src/
-│       ├── index.ts          # Express app entry
+│       ├── index.ts          # process entry — reads PORT, calls listen()
+│       ├── app.ts            # createApp(): builds the Express app, no listen()
 │       ├── db/               # pg Pool + query helpers
 │       ├── routes/           # HTTP layer: parse, validate, respond
 │       ├── services/         # business rules (skill match, Done rule, tree build)
@@ -67,9 +69,13 @@ depends on: a key shipped to the browser would be readable by anyone using the a
 │       └── types/            # shared TS types
 └── frontend/
     ├── Dockerfile
+    ├── .dockerignore
     ├── nginx.conf
+    ├── index.html
+    ├── vite.config.ts        # dev-only /api proxy mirroring nginx (7.2)
     └── src/
         ├── main.tsx
+        ├── App.tsx
         ├── api/              # typed fetch wrappers
         ├── pages/
         └── components/
@@ -78,6 +84,10 @@ depends on: a key shipped to the browser would be readable by anyone using the a
 Routes are kept thin and business rules live in `services/` so the two rules that
 actually matter — skill matching (REQ-1.8) and the recursive Done rule (REQ-5.3) —
 sit in plain functions that can be unit-tested without starting an HTTP server.
+
+`app.ts` is split from `index.ts` for the same reason: integration tests (8.2) need
+to build the app and bind it to an ephemeral port themselves, which is impossible if
+the entry module calls `listen()` as a side effect of being imported.
 
 ---
 
@@ -555,6 +565,16 @@ backend still boots — every inference attempt then fails and falls back per RE
 so a reviewer who forgets the key gets a working app with a clear notification
 rather than a container that won't start.
 
+The remaining environment variables are not LLM-related but belong in the same
+`.env.example` template (REQ-7.5), all with committed defaults:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `app` / `app` / `taskdb` | consumed by the `db` service |
+| `DATABASE_URL` | `postgresql://app:app@db:5432/taskdb` | read by the backend's pg Pool; host is the compose service name |
+| `PORT` | `4000` | backend listen port, also the nginx upstream |
+| `FRONTEND_PORT` | `3000` | host port the SPA is published on |
+
 ### 5.2 Inference
 
 One call per node needing skills, from the node's own title only (assumption 7 — no
@@ -777,7 +797,8 @@ services:
   backend:
     build: ./backend
     environment:
-      - DATABASE_URL=postgresql://...@db:5432/...
+      - PORT=4000
+      - DATABASE_URL=${DATABASE_URL:-postgresql://app:app@db:5432/taskdb}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
       - LLM_MODEL=${LLM_MODEL:-gemini-2.0-flash}
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-10000}
@@ -788,7 +809,7 @@ services:
 
   frontend:
     build: ./frontend
-    ports: ["3000:80"]
+    ports: ["${FRONTEND_PORT:-3000}:80"]
     depends_on: [backend]
 
 volumes:
@@ -806,10 +827,16 @@ Because these are container *environment* values rather than build arguments,
 changing the key takes effect on the next `docker-compose up` with no rebuild — and
 the key is never baked into an image layer.
 
+The published frontend port is `${FRONTEND_PORT:-3000}` rather than a hard-coded
+`3000`, so a reviewer whose host already has something on port 3000 can move the app
+with a one-line `.env` change instead of editing `docker-compose.yml`.
+
 ### 7.2 Images
 
 Both use multi-stage builds — the toolchain needed to compile is not needed to run,
-and leaving it out keeps the images small.
+and leaving it out keeps the images small. A `.dockerignore` in each service keeps
+the host's `node_modules/` and `dist/` out of the build context, so the image never
+picks up host-built (wrong-architecture) artifacts.
 
 - **backend**: build stage installs all dependencies and compiles TS → JS. Runtime
   stage copies `dist/`, production-only `node_modules`, the `db/migrations/` and
@@ -819,6 +846,13 @@ and leaving it out keeps the images small.
 - **frontend**: build stage runs `vite build`; runtime stage copies `dist/` into
   `nginx:alpine` with a config that serves the SPA and proxies `/api` to `backend`.
 
+The `/api` proxy is `proxy_pass http://backend:4000/` with a trailing slash, which
+strips the `/api` prefix: the browser calls `/api/health` and the backend sees
+`/health`. The backend therefore needs no knowledge of the prefix, and the paths in
+section 4.1 are the paths it actually serves. `vite.config.ts` applies the same
+rewrite to its dev-server proxy so `npm run dev` behaves identically to the
+container.
+
 The nginx config falls back to `index.html` for unknown paths, so deep-linking to
 `/tasks/new` or refreshing that page works — without it, nginx would look for a file
 at that path and return 404.
@@ -827,7 +861,15 @@ at that path and return 404.
 
 The backend entrypoint runs, in order: the migration runner (3.3), then the
 idempotent seed (3.4), then the server. Both steps are safe to repeat, so restarting
-a container against an existing volume is a no-op rather than an error.
+a container against an existing volume is a no-op rather than an error. Each step is
+guarded by a file-existence check, so the same entrypoint is valid before those
+scripts exist (phase 1) and after they do.
+
+The `/health/db` check (REQ-0.4) opens a pooled connection and runs `SELECT 1`,
+answering 503 when that fails. The pool is created with a bounded
+`connectionTimeoutMillis` and an `error` handler, because the default is to wait
+indefinitely and to surface pool-level failures as an uncaught exception — either
+would turn "Postgres is down" into "the backend is down" instead of a 503.
 
 This is what makes REQ-7.4 true. Stated concretely, that requirement means the
 reviewer's entire setup is:

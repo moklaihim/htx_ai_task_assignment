@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-taskdb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      - PORT=4000
+      - DATABASE_URL=${DATABASE_URL:-postgresql://app:app@db:5432/taskdb}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
+      - LLM_MODEL=${LLM_MODEL:-gemini-2.0-flash}
+      - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-10000}
+      - LLM_MODE=${LLM_MODE:-live}
+      - LLM_API_KEY=${LLM_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
