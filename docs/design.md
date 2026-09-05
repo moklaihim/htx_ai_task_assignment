@@ -1076,6 +1076,7 @@ services:
     environment:
       - PORT=4000
       - DATABASE_URL=${DATABASE_URL:-postgresql://app:app@db:5432/taskdb}
+      - DB_CONNECTION_TIMEOUT_MS=${DB_CONNECTION_TIMEOUT_MS:-3000}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
       - LLM_MODEL=${LLM_MODEL:-gemini-3.5-flash}
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-10000}
