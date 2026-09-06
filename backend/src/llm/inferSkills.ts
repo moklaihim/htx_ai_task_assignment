@@ -1,13 +1,16 @@
 import { llmConfig, type LlmConfig } from './config.js';
 import { callGemini } from './geminiClient.js';
-import { parseSkillIds } from './parseSkills.js';
+import { parseSkillInference, type SkillInference } from './parseSkills.js';
 import { callStub } from './stubClient.js';
 import type { Skill } from '../types/task.js';
 
+export type { SkillInference } from './parseSkills.js';
+
 /**
  * The single entry point the rest of the backend uses for skill inference
- * (REQ-6.1). Callers pass a title and the seeded skills and get back seeded
- * skill ids, or an exception — they never see which `LLM_MODE` produced it.
+ * (REQ-6.1). Callers pass a title and the seeded skills and get back one of the
+ * two successful outcomes — seeded skill ids, or "not classifiable" (REQ-6.8) —
+ * or an exception. They never see which `LLM_MODE` produced it.
  *
  * The three modes (design §5.4) differ **only** in where the raw response text
  * comes from; parsing, the unrecognised-name gate, and the failure semantics
@@ -19,13 +22,13 @@ import type { Skill } from '../types/task.js';
  * field that can change the mode, so no client can talk the backend into using
  * a test double.
  */
-export async function inferSkillIds(
+export async function inferSkills(
   title: string,
   seededSkills: Skill[],
   config: LlmConfig = llmConfig,
-): Promise<number[]> {
+): Promise<SkillInference> {
   const rawText = await callByMode(title, config);
-  return parseSkillIds(rawText, seededSkills);
+  return parseSkillInference(rawText, seededSkills);
 }
 
 function callByMode(title: string, config: LlmConfig): Promise<string> {

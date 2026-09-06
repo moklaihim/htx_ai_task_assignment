@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 
-type ToastKind = 'success' | 'error';
+/**
+ * `info` is the neutral third kind (REQ-4.7): something the user should know
+ * that is not a success and not a failure — an LLM that correctly declined to
+ * classify a title being the case that motivated it. Styling it as an error
+ * would report a working system as a broken one.
+ */
+type ToastKind = 'success' | 'error' | 'info';
 interface ToastItem {
   id: number;
   kind: ToastKind;
@@ -9,7 +15,7 @@ interface ToastItem {
 
 type Listener = (toasts: ToastItem[]) => void;
 
-const AUTO_DISMISS_MS = 4000;
+const AUTO_DISMISS_MS = 14000;
 
 // Module-level store rather than React context: any component can call
 // `toast.success`/`toast.error` without being wrapped in a provider, matching
@@ -44,6 +50,7 @@ function push(kind: ToastKind, message: string) {
 export const toast = {
   success: (message: string) => push('success', message),
   error: (message: string) => push('error', message),
+  info: (message: string) => push('info', message),
 };
 
 /**

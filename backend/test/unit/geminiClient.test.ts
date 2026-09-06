@@ -19,10 +19,29 @@ function geminiOk(text: string): Response {
   });
 }
 
+/**
+ * The SDK builds its request headers as a `Headers` instance rather than the
+ * plain object the hand-written `fetch` call used to pass, so they are
+ * normalised before being asserted on.
+ */
+function headersOf(init: RequestInit): Record<string, string> {
+  const { headers } = init;
+  return headers instanceof Headers
+    ? Object.fromEntries(headers)
+    : (headers as Record<string, string>);
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * These tests stub the network boundary (`fetch`) rather than mocking
+ * `@google/genai`. The SDK is therefore exercised for real: the URL, request
+ * body and headers asserted below are the ones it actually builds, so this
+ * suite would catch the SDK changing the wire format under us — which a module
+ * mock, asserting only on the arguments we hand the SDK, could not.
+ */
 describe('callGemini (6.2, design §5.2)', () => {
   it('posts the design §5.2 prompt for the given title', async () => {
     const fetchMock = vi.fn(async () => geminiOk('{"skills":["Frontend"]}'));
@@ -45,6 +64,26 @@ describe('callGemini (6.2, design §5.2)', () => {
     expect(prompt).toContain('profile picture');
   });
 
+  it('tells the model how to decline a title that is not a software task (REQ-6.8)', async () => {
+    const fetchMock = vi.fn(async () => geminiOk('{"classifiable":false,"skills":[]}'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callGemini('buy eggs', config);
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const prompt = JSON.parse(init.body as string).contents[0].parts[0].text;
+
+    // The refusal is spelled out as an answer with a shape, not left implicit —
+    // and the negative examples are what stop it reading as "reject anything
+    // short".
+    expect(prompt).toContain('{"classifiable": false, "skills": []}');
+    expect(prompt).toContain('"buy eggs" -> {"classifiable":false,"skills":[]}');
+    expect(prompt).toContain('"123145" -> {"classifiable":false,"skills":[]}');
+    // ...balanced by a terse title that IS a task, so brevity alone is not the
+    // signal to decline.
+    expect(prompt).toContain('"Fix the login button alignment on Safari"');
+  });
+
   it('requests JSON response mode with the skill set as the schema enum', async () => {
     const fetchMock = vi.fn(async () => geminiOk('{"skills":["Backend"]}'));
     vi.stubGlobal('fetch', fetchMock);
@@ -61,22 +100,41 @@ describe('callGemini (6.2, design §5.2)', () => {
     expect(generationConfig.temperature).toBe(0);
   });
 
+  it('makes `classifiable` a required, first-generated field (REQ-6.8)', async () => {
+    const fetchMock = vi.fn(async () => geminiOk('{"classifiable":true,"skills":["Backend"]}'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callGemini('Add audit logging', config);
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const { responseSchema } = JSON.parse(init.body as string).generationConfig;
+
+    // Required, so the flag cannot be quietly omitted on the titles that need
+    // it; ordered first, so the model decides "is this a task" before emitting
+    // a skill name it would then have to contradict.
+    expect(responseSchema.properties.classifiable.type).toBe('BOOLEAN');
+    expect(responseSchema.required).toEqual(['classifiable', 'skills']);
+    expect(responseSchema.propertyOrdering).toEqual(['classifiable', 'skills']);
+  });
+
   it('sends the key as a header, never in the URL (REQ-6.7)', async () => {
-    const fetchMock = vi.fn(async () => geminiOk('{"skills":[]}'));
+    const fetchMock = vi.fn(async () => geminiOk('{"classifiable":false,"skills":[]}'));
     vi.stubGlobal('fetch', fetchMock);
 
     await callGemini('Anything', config);
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).not.toContain('test-key');
-    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('test-key');
+    expect(headersOf(init)['x-goog-api-key']).toBe('test-key');
   });
 
   it('returns the candidate text unchanged', async () => {
-    vi.stubGlobal('fetch', async () => geminiOk('{"skills":["Frontend","Backend"]}'));
+    vi.stubGlobal('fetch', async () =>
+      geminiOk('{"classifiable":true,"skills":["Frontend","Backend"]}'),
+    );
 
     await expect(callGemini('Update profile page', config)).resolves.toBe(
-      '{"skills":["Frontend","Backend"]}',
+      '{"classifiable":true,"skills":["Frontend","Backend"]}',
     );
   });
 
@@ -101,6 +159,18 @@ describe('callGemini (6.2, design §5.2)', () => {
     vi.stubGlobal('fetch', async () => new Response('quota exceeded', { status: 429 }));
 
     await expect(callGemini('Anything', config)).rejects.toThrow('HTTP 429');
+  });
+
+  it('makes exactly one attempt on a retryable status, leaving the timeout meaningful', async () => {
+    // The SDK retries only when `retryOptions` is configured, and the client
+    // deliberately does not configure it. Asserted because switching retries on
+    // would quietly turn LLM_TIMEOUT_MS from a bound on the whole call into a
+    // bound on one attempt of several (design §5.3).
+    const fetchMock = vi.fn(async () => new Response('overloaded', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callGemini('Anything', config)).rejects.toThrow('HTTP 503');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('throws on a 200 with no candidate text', async () => {

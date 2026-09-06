@@ -10,6 +10,10 @@ interface TaskDto {
   subtasks: TaskDto[];
   /** Present only on `POST /tasks` responses (design §4.1, REQ-6.6). */
   skillInferenceFailed?: boolean;
+  /** Likewise, for the REQ-6.8 "not a software task" outcome. */
+  skillInferenceUnclassifiable?: boolean;
+  /** Likewise, for the REQ-6.9 "the LLM chose these skills" outcome. */
+  skillInferenceApplied?: boolean;
 }
 
 interface ErrorDto {
@@ -20,9 +24,14 @@ interface ErrorDto {
 const FRONTEND = 1;
 const BACKEND = 2;
 
-/** A POST response tree with the response-only `skillInferenceFailed` markers removed. */
+/** A POST response tree with the response-only inference markers removed. */
 function withoutInferenceFlags(task: TaskDto): TaskDto {
-  const { skillInferenceFailed: _ignored, ...rest } = task;
+  const {
+    skillInferenceFailed: _failed,
+    skillInferenceUnclassifiable: _unclassifiable,
+    skillInferenceApplied: _applied,
+    ...rest
+  } = task;
   return { ...rest, subtasks: task.subtasks.map(withoutInferenceFlags) };
 }
 

@@ -55,7 +55,7 @@ Everything the app reads is listed in [`.env.example`](.env.example):
 | `DATABASE_URL` | no | `postgresql://app:app@db:5432/taskdb` | Backend's Postgres connection string (`db` is the compose service name) |
 | `DB_CONNECTION_TIMEOUT_MS` | no | `3000` | How long the backend waits for a pooled connection before `/health/db` reports 503 |
 | `FRONTEND_PORT` | no | `3000` | Host port the SPA is published on |
-| `LLM_BASE_URL` | no | `https://generativelanguage.googleapis.com` | Gemini API origin |
+| `LLM_BASE_URL` | no | `https://generativelanguage.googleapis.com` | Gemini API origin (the SDK's `httpOptions.baseUrl`) |
 | `LLM_MODEL` | no | `gemini-3.5-flash` | Gemini model id |
 | `LLM_TIMEOUT_MS` | no | `10000` | Per-call deadline before the LLM request is aborted |
 | `LLM_MODE` | no | `live` | `live` calls Gemini; `stub`/`fail` are test doubles (see [Testing](#testing)) |
@@ -246,7 +246,7 @@ Error codes: `VALIDATION_ERROR` (400), `NOT_FOUND` (404), `SKILL_MISMATCH` (400)
 | GET | `/health/db` | — | `200 {"status":"ok","db":"up"}` | `503 {"status":"error","db":"down"}` |
 | GET | `/tasks` | — | `200 Task[]` (top-level only, subtasks nested inside) | — |
 | GET | `/tasks/:id` | — | `200 Task` (with nested subtasks) | `404` unknown id |
-| POST | `/tasks` | `CreateTaskInput` | `201 Task` (tree, `skillInferenceFailed` on affected nodes) | `400` invalid body / unknown skill id |
+| POST | `/tasks` | `CreateTaskInput` | `201 Task` (tree, inference markers on inferred nodes) | `400` invalid body / unknown skill id |
 | PATCH | `/tasks/:id/assign` | `{"assigneeId": number \| null}` | `200 Task` | `400 SKILL_MISMATCH`, `404` unknown task/developer |
 | PATCH | `/tasks/:id/status` | `{"status": "To-do" \| "In Progress" \| "Done"}` | `200 Task` | `400 SUBTASKS_NOT_DONE`/`VALIDATION_ERROR`, `404` |
 | GET | `/developers` | — | `200 Developer[]` | — |
@@ -294,12 +294,34 @@ Error codes: `VALIDATION_ERROR` (400), `NOT_FOUND` (404), `SKILL_MISMATCH` (400)
 `skillIds` on any node is what triggers LLM skill inference for that node — the
 LLM is never invoked for a node the user gave explicit skills to.
 
-### `skillInferenceFailed` (POST response only)
+### Inference markers (POST response only)
 
-Each node in the `POST /tasks` response carries an optional boolean,
-`skillInferenceFailed`. It appears **only** here, never in `GET` responses,
-because it describes what happened during that one request rather than a stored
-property of the task:
+Each node in the `POST /tasks` response carries at most one of three optional
+booleans: `skillInferenceApplied`, `skillInferenceFailed` and
+`skillInferenceUnclassifiable`. They appear **only** here, never in `GET`
+responses, because they describe what happened during that one request rather
+than a stored property of the task. The task is created either way.
+
+`skillInferenceApplied: true` — the `skills` on this node were **chosen by the
+LLM**, not by the user. Without it the two are indistinguishable (a populated
+`skills` array looks the same either way), so the UI could not confirm what
+inference actually did:
+
+```json
+{
+  "id": 2,
+  "title": "Build the profile edit form",
+  "status": "To-do",
+  "assignee": null,
+  "skills": [ { "id": 1, "name": "Frontend" } ],
+  "skillInferenceApplied": true,
+  "subtasks": []
+}
+```
+
+`skillInferenceFailed: true` — inference was attempted (the node's `skillIds`
+was empty) and **something went wrong**: the LLM call failed, timed out, or came
+back unusable.
 
 ```json
 {
@@ -313,9 +335,29 @@ property of the task:
 }
 ```
 
-`true` means inference was attempted (the node's `skillIds` was empty) and either
-the LLM call failed or its response named no seeded skill — the task is still
-created, with an empty `skills` list.
+`skillInferenceUnclassifiable: true` — inference **succeeded**, and the answer is
+that the title does not describe a software task. Titles are free text, so
+"buy eggs" or "123145" are ordinary inputs; the prompt and response schema give
+the model an explicit way to say so (`{"classifiable": false, "skills": []}`)
+rather than leaving it to guess a skill:
+
+```json
+{
+  "id": 4,
+  "title": "buy eggs",
+  "status": "To-do",
+  "assignee": null,
+  "skills": [],
+  "skillInferenceUnclassifiable": true,
+  "subtasks": []
+}
+```
+
+The three are deliberately separate: the last two share an empty `skills` array
+and only one of them means the system is broken, while the first shares a
+populated one with skills the user picked. The Task Creation Page reports each
+with its own toast colour — green for skills the LLM chose (naming them), red
+for a failure, neutral slate for a title it declined to classify.
 
 ### Developer shape (`GET /developers`, `GET /developers/:id`)
 
@@ -353,6 +395,7 @@ Docker. Everything below is a real choice, with the alternative that was rejecte
 | **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
 | **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, avoiding CORS configuration entirely. | Serving the SPA from Express (mixes concerns, loses static-file caching) |
 | **Gemini** | Free tier, following the PDF's own suggestion, for LLM skill inference. | — |
+| **`@google/genai` (official SDK)** | Owns the two details most likely to drift as the API versions — the request path and the response envelope shape. A hand-written `fetch` client had both hardcoded (`/v1beta/models/{model}:generateContent`, and a manual `candidates[0].content.parts[0].text` walk), making an API version bump a code change. Typed request/response and a `Type`-checked response schema come with it. | Hand-rolled `fetch` — what this replaced; fewer dependencies, but it put the API's versioning surface into our own code |
 
 **Not used: a CSS or component library.** The UI is two pages of tables, form
 fields and buttons — elements the platform already provides. A component library
@@ -392,10 +435,11 @@ Three layers, each covering what the layer below cannot:
   ```
 
   Requires the stack already running (`docker compose up -d` from the repo root).
-  Eight scenarios (E2E-1 through E2E-8) cover task creation, assignment,
+  Nine scenarios (E2E-1 through E2E-9) cover task creation, assignment,
   status updates, arbitrarily deep subtask trees, the recursive Done rule, and
-  both LLM outcomes (`stub` success, `fail` fallback) — the last two are run by
-  recreating the `backend` container with `LLM_MODE` forced to `stub`/`fail`
+  all three LLM outcomes (`stub` success, `fail` fallback, and a title the model
+  declines to classify) — the last three are run by recreating the `backend`
+  container with `LLM_MODE` forced to `stub`/`fail`
   (`e2e/helpers/composeEnv.ts`), so the suite makes no live Gemini call and spends
   no API quota, and restores the container to `.env`'s configured mode afterward.
 
@@ -434,7 +478,13 @@ reviewer can distinguish stated requirements from decisions made to fill them:
    same optional skills field, same LLM classification path. A subtask's required
    skills are inferred from *its own* title, standalone. A subtask never copies or
    inherits skills from its parent task's skills.
-8. **Task List "..." column** — the PDF's Task List wireframe shows an unlabelled
+8. **Titles that aren't software tasks** — the PDF assumes every title is a user
+   story, but the title is a free-text field, so "buy eggs" or "123145" are
+   ordinary inputs. Read as: the LLM must be able to decline ("this is not a
+   software task") rather than guess, and a declined title is reported to the user
+   as information, not as a failure. See
+   [Inference markers](#inference-markers-post-response-only).
+9. **Task List "..." column** — the PDF's Task List wireframe shows an unlabelled
    "..." column between Skills and Status. This is read as an indication that
    further task attributes *may* be displayed, not as a requirement for any
    specific additional column. No extra column is implemented.
