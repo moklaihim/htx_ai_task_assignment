@@ -116,6 +116,7 @@ Everything below is a real choice, with the reasoning REQ-8.4 asks to be documen
 | **Vitest** | One test runner for both halves of the repo. On the frontend it reuses the existing Vite config, so TS handling and path aliases are already correct with no second build setup. On the backend the benefit is narrower and worth stating plainly: it runs TypeScript tests without a separate transform step. | Jest — needs its own TS toolchain configured; `node:test` — no extra dependency, but a separate runner from the frontend's, so two ways of writing tests in one repo |
 | **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack, which is the only way to verify things like "the Update button is disabled until the value changes" (REQ-3.4). Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
 | **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, which avoids CORS configuration entirely. | Serving the SPA from Express (mixes concerns, loses static-file caching) |
+| **`@google/genai` (official Gemini SDK)** | Owns the request path and response envelope — the two parts of the integration most likely to change as the API versions, and both previously hardcoded in our own client (see 5.2). Brings typed requests/responses and a `Type`-checked response schema, replacing a hand-walked `candidates[0].content.parts[0].text`. | Hand-rolled `fetch` — what this replaced; one fewer dependency, but it pulled the API's versioning surface into our code |
 
 **Not used: Supertest.** Integration tests start the Express app in a setup hook and
 call it with Node's built-in global `fetch`. Supertest would only wrap that in a
@@ -770,14 +771,25 @@ matching rule in 4.2.
 (`buildPrompt(title)`), with the three examples written as single unwrapped lines —
 the line breaks in the block above are only this document's column width, and
 feeding them to the model would put newlines inside the example titles.
-`src/llm/geminiClient.ts` `POST`s it to
-`{baseUrl}/v1beta/models/{model}:generateContent` with `temperature: 0`, since
-classification wants the most likely answer every time rather than variety. The API
-key travels in an `x-goog-api-key` header rather than the `?key=` query parameter
-Google's quickstart uses: a URL ends up in access logs and error messages, and the
-key must not (REQ-6.7). The configured timeout is enforced with an `AbortController`,
-not merely awaited — `fetch` has no default deadline, so a hung connection would
-otherwise keep the whole `POST /tasks` request waiting indefinitely.
+`src/llm/geminiClient.ts` sends it via the official `@google/genai` SDK with
+`temperature: 0`, since classification wants the most likely answer every time
+rather than variety. The API key travels in an `x-goog-api-key` header rather than
+the `?key=` query parameter Google's quickstart uses: a URL ends up in access logs
+and error messages, and the key must not (REQ-6.7). The configured timeout is
+enforced with our own `AbortController`, passed to the SDK as `abortSignal` —
+neither `fetch` nor the SDK applies a deadline by default, so a hung connection
+would otherwise keep the whole `POST /tasks` request waiting indefinitely.
+
+The SDK replaced a hand-written `fetch` call during phase 6. The motivation was
+that the two things most likely to change as the API versions — the request path
+(`/v1beta/models/{model}:generateContent`) and the response envelope, previously
+walked by hand as `candidates[0].content.parts[0].text` — were both spelled out in
+our own code, so an API version bump was a code change in this file. The SDK owns
+both, and `response.text` replaces the manual walk. The wire request is unchanged:
+same path, same body, same header, one attempt per call. That last point is
+deliberate — the SDK retries only when `retryOptions` is passed, and it is not, so
+`LLM_TIMEOUT_MS` stays a bound on the whole operation rather than on one attempt of
+several. `LLM_BASE_URL` is now supplied as the SDK's `httpOptions.baseUrl`.
 
 **Manual verification (task 6.9, REQ-6.5).** Run in `live` mode against
 `gemini-3.5-flash`, the three PDF reference titles classify as the PDF states —
@@ -1189,6 +1201,15 @@ Pure functions, no database, no network:
 - `buildForest` — a three-level tree; a subtask fetched as its own root; an empty set.
 - `addSubtaskTo` — appends to a nested target, not the root; leaves siblings untouched.
 - LLM response parsing — valid JSON, malformed JSON, unknown skill names, empty array.
+
+`callGemini` is unit-tested by stubbing the global `fetch` rather than mocking the
+`@google/genai` module. Both would isolate the test from the network, but stubbing
+one level lower exercises the SDK for real, so the assertions are made against the
+URL, body and headers it genuinely produces — which means the suite would catch the
+SDK changing the wire format under us. A module mock could only assert on the
+arguments we hand the SDK, which is the half of the integration least likely to
+break. It also keeps the REQ-6.7 check honest: "the key never appears in the URL" is
+verified against the real request, not against our intent.
 
 ### 8.2 Integration (Vitest + `fetch`)
 

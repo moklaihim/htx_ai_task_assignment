@@ -19,10 +19,29 @@ function geminiOk(text: string): Response {
   });
 }
 
+/**
+ * The SDK builds its request headers as a `Headers` instance rather than the
+ * plain object the hand-written `fetch` call used to pass, so they are
+ * normalised before being asserted on.
+ */
+function headersOf(init: RequestInit): Record<string, string> {
+  const { headers } = init;
+  return headers instanceof Headers
+    ? Object.fromEntries(headers)
+    : (headers as Record<string, string>);
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * These tests stub the network boundary (`fetch`) rather than mocking
+ * `@google/genai`. The SDK is therefore exercised for real: the URL, request
+ * body and headers asserted below are the ones it actually builds, so this
+ * suite would catch the SDK changing the wire format under us — which a module
+ * mock, asserting only on the arguments we hand the SDK, could not.
+ */
 describe('callGemini (6.2, design §5.2)', () => {
   it('posts the design §5.2 prompt for the given title', async () => {
     const fetchMock = vi.fn(async () => geminiOk('{"skills":["Frontend"]}'));
@@ -69,7 +88,7 @@ describe('callGemini (6.2, design §5.2)', () => {
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).not.toContain('test-key');
-    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('test-key');
+    expect(headersOf(init)['x-goog-api-key']).toBe('test-key');
   });
 
   it('returns the candidate text unchanged', async () => {
@@ -101,6 +120,18 @@ describe('callGemini (6.2, design §5.2)', () => {
     vi.stubGlobal('fetch', async () => new Response('quota exceeded', { status: 429 }));
 
     await expect(callGemini('Anything', config)).rejects.toThrow('HTTP 429');
+  });
+
+  it('makes exactly one attempt on a retryable status, leaving the timeout meaningful', async () => {
+    // The SDK retries only when `retryOptions` is configured, and the client
+    // deliberately does not configure it. Asserted because switching retries on
+    // would quietly turn LLM_TIMEOUT_MS from a bound on the whole call into a
+    // bound on one attempt of several (design §5.3).
+    const fetchMock = vi.fn(async () => new Response('overloaded', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callGemini('Anything', config)).rejects.toThrow('HTTP 503');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('throws on a 200 with no candidate text', async () => {

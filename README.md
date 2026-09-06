@@ -55,7 +55,7 @@ Everything the app reads is listed in [`.env.example`](.env.example):
 | `DATABASE_URL` | no | `postgresql://app:app@db:5432/taskdb` | Backend's Postgres connection string (`db` is the compose service name) |
 | `DB_CONNECTION_TIMEOUT_MS` | no | `3000` | How long the backend waits for a pooled connection before `/health/db` reports 503 |
 | `FRONTEND_PORT` | no | `3000` | Host port the SPA is published on |
-| `LLM_BASE_URL` | no | `https://generativelanguage.googleapis.com` | Gemini API origin |
+| `LLM_BASE_URL` | no | `https://generativelanguage.googleapis.com` | Gemini API origin (the SDK's `httpOptions.baseUrl`) |
 | `LLM_MODEL` | no | `gemini-3.5-flash` | Gemini model id |
 | `LLM_TIMEOUT_MS` | no | `10000` | Per-call deadline before the LLM request is aborted |
 | `LLM_MODE` | no | `live` | `live` calls Gemini; `stub`/`fail` are test doubles (see [Testing](#testing)) |
@@ -353,6 +353,7 @@ Docker. Everything below is a real choice, with the alternative that was rejecte
 | **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
 | **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, avoiding CORS configuration entirely. | Serving the SPA from Express (mixes concerns, loses static-file caching) |
 | **Gemini** | Free tier, following the PDF's own suggestion, for LLM skill inference. | — |
+| **`@google/genai` (official SDK)** | Owns the two details most likely to drift as the API versions — the request path and the response envelope shape. A hand-written `fetch` client had both hardcoded (`/v1beta/models/{model}:generateContent`, and a manual `candidates[0].content.parts[0].text` walk), making an API version bump a code change. Typed request/response and a `Type`-checked response schema come with it. | Hand-rolled `fetch` — what this replaced; fewer dependencies, but it put the API's versioning surface into our own code |
 
 **Not used: a CSS or component library.** The UI is two pages of tables, form
 fields and buttons — elements the platform already provides. A component library
