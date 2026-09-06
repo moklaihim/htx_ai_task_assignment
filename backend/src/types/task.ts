@@ -30,6 +30,12 @@ export interface TaskNode extends TaskRow {
    */
   skillInferenceFailed?: boolean;
   /**
+   * `POST /tasks` response only. Present iff `skillInferenceFailed` is `true`
+   * — the same message logged server-side (design §5.3), shown to the user so
+   * they know *why* Skills are empty rather than just that they are.
+   */
+  skillInferenceFailureReason?: string;
+  /**
    * `POST /tasks` response only (REQ-6.8). `true` if the LLM answered that the
    * title isn't a software task it can classify (`"buy eggs"`, `"123145"`).
    * `skills` is `[]`, but nothing failed — reported to the frontend as

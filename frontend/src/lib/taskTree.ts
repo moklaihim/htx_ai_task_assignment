@@ -39,9 +39,15 @@ export interface ClassifiedTask {
   skills: string[];
 }
 
+/** `reason` is the raw, unbounded server message — callers truncate it for display. */
+export interface FailedTask {
+  title: string;
+  reason: string;
+}
+
 export interface InferenceNotices {
   classified: ClassifiedTask[];
-  failed: string[];
+  failed: FailedTask[];
   unclassifiable: string[];
 }
 
@@ -55,7 +61,7 @@ export function collectInferenceNotices(task: TaskNode): InferenceNotices {
         skills: node.skills.map((skill) => skill.name),
       });
     } else if (node.skillInferenceFailed) {
-      notices.failed.push(node.title);
+      notices.failed.push({ title: node.title, reason: node.skillInferenceFailureReason ?? '' });
     } else if (node.skillInferenceUnclassifiable) {
       notices.unclassifiable.push(node.title);
     }

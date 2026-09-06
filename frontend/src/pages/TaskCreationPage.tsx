@@ -5,7 +5,7 @@ import { createTask } from '../api/tasks';
 import { ApiError } from '../api/client';
 import { toast } from '../components/Toaster';
 import { TaskFormNode } from '../components/TaskFormNode';
-import { collectInferenceNotices, type ClassifiedTask } from '../lib/taskTree';
+import { collectInferenceNotices, type ClassifiedTask, type FailedTask } from '../lib/taskTree';
 import {
   addSubtaskTo,
   countNodes,
@@ -80,8 +80,12 @@ export function TaskCreationPage() {
       // The LLM call itself went wrong for these nodes. The only remedy is
       // to create the Task again — Skills can't be added after the fact.
       if (notices.failed.length > 0) {
+        const titles = describeTitles(notices.failed.map((task) => task.title));
+        const reason = describeFailureReason(notices.failed);
         toast.error(
-          `Automatic skill detection failed for ${describeTitles(notices.failed)}. Saved with no Skills.`,
+          reason
+            ? `Automatic skill detection failed for ${titles}: ${reason}. Saved with no Skills.`
+            : `Automatic skill detection failed for ${titles}. Saved with no Skills.`,
         );
       }
 
@@ -153,6 +157,34 @@ function describeClassified(classified: ClassifiedTask[]): string {
 /** `["Frontend","Backend"]` → `Frontend and Backend`. */
 function joinWords(words: string[]): string {
   return words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : words[0] ?? '';
+}
+
+/** A toast has no scroll and no line clamp — a long reason just grows the box. */
+const MAX_REASON_LENGTH = 100;
+
+/**
+ * The server's raw failure reason (a timeout message, an HTTP status and
+ * detail, an unparseable-JSON dump) can run well past what a toast should
+ * show — trims it to one readable line rather than letting the toast grow to
+ * fit it.
+ */
+function truncateReason(reason: string): string {
+  const collapsed = reason.replace(/\s+/g, ' ').trim();
+  return collapsed.length > MAX_REASON_LENGTH
+    ? `${collapsed.slice(0, MAX_REASON_LENGTH)}…`
+    : collapsed;
+}
+
+/**
+ * One failed task names its reason directly. Several failed tasks name a
+ * reason only when every one of them failed the same way — different nodes
+ * failing for different reasons, spelled out together, is exactly the wall of
+ * text `describeTitles` already caps titles to avoid. Returns `''` (no reason
+ * shown) when reasons differ, or the server didn't send one.
+ */
+function describeFailureReason(failed: FailedTask[]): string {
+  const reasons = new Set(failed.map((task) => task.reason).filter((reason) => reason !== ''));
+  return reasons.size === 1 ? truncateReason(reasons.values().next().value!) : '';
 }
 
 /**
