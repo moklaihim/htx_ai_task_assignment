@@ -802,8 +802,6 @@ Answer two questions, in this order.
 2. Only if it IS a software task, choose the skills it requires. Return one or
    both, never an empty list, with "classifiable": true.
 
-Return only JSON: {"classifiable": true, "skills": ["Frontend"]}
-
 Examples:
 "As a visitor, I want to see a responsive homepage so that I can easily navigate
  on both desktop and mobile devices." -> {"classifiable":true,"skills":["Frontend"]}

@@ -116,8 +116,6 @@ export function buildPrompt(title: string): string {
     '2. Only if it IS a software task, choose the skills it requires. Return one or',
     '   both, never an empty list, with "classifiable": true.',
     '',
-    'Return only JSON: {"classifiable": true, "skills": ["Frontend"]}',
-    '',
     'Examples:',
     examples,
     '',
