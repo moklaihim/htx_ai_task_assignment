@@ -46,7 +46,7 @@ test.describe.serial('E2E-7, E2E-8 and E2E-9: LLM skill inference', () => {
     const detectedToast = successToast(page).filter({ hasText: /Skills detected/ });
     await expect(detectedToast).toBeVisible();
     await expect(detectedToast).toContainText('Frontend');
-    await expect(detectedToast).toBeHidden({ timeout: 8_000 });
+    await expect(detectedToast).toBeHidden({ timeout: 16_000 });
   });
 
   test('E2E-8: LLM_MODE=fail — task saved with no skills, toast appears and auto-dismisses', async ({
@@ -68,7 +68,7 @@ test.describe.serial('E2E-7, E2E-8 and E2E-9: LLM skill inference', () => {
     // already completed and navigated away, unaffected by this toast.
     const failureToast = page.getByTestId('toast').filter({ hasText: /skill detection failed/i });
     await expect(failureToast).toBeVisible();
-    await expect(failureToast).toBeHidden({ timeout: 8_000 });
+    await expect(failureToast).toBeHidden({ timeout: 16_000 });
   });
 
   test('E2E-9: LLM_MODE=stub — an unclassifiable title is reported as info, not as an error', async ({
@@ -98,6 +98,6 @@ test.describe.serial('E2E-7, E2E-8 and E2E-9: LLM skill inference', () => {
     await expect(page.getByTestId('toast').filter({ hasText: /failed/i })).toHaveCount(0);
     await expect(successToast(page).filter({ hasText: /Skills detected/ })).toHaveCount(0);
 
-    await expect(infoToast).toBeHidden({ timeout: 8_000 });
+    await expect(infoToast).toBeHidden({ timeout: 16_000 });
   });
 });

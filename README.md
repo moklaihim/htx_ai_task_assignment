@@ -56,7 +56,7 @@ Everything the app reads is listed in [`.env.example`](.env.example):
 | `DB_CONNECTION_TIMEOUT_MS` | no | `3000` | How long the backend waits for a pooled connection before `/health/db` reports 503 |
 | `FRONTEND_PORT` | no | `3000` | Host port the SPA is published on |
 | `LLM_BASE_URL` | no | `https://generativelanguage.googleapis.com` | Gemini API origin (the SDK's `httpOptions.baseUrl`) |
-| `LLM_MODEL` | no | `gemini-3.5-flash` | Gemini model id |
+| `LLM_MODEL` | no | `gemini-3.8-flash` | Gemini model id |
 | `LLM_TIMEOUT_MS` | no | `10000` | Per-call deadline before the LLM request is aborted |
 | `LLM_MODE` | no | `live` | `live` calls Gemini; `stub`/`fail` are test doubles (see [Testing](#testing)) |
 | `LLM_API_KEY` | **yes** | — | The only value with no committed default; never commit a real key |

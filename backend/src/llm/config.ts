@@ -19,7 +19,7 @@ export type LlmMode = 'live' | 'stub' | 'fail';
 export interface LlmConfig {
   /** Gemini API origin, no trailing slash. */
   baseUrl: string;
-  /** Model id, e.g. `gemini-3.5-flash`. */
+  /** Model id, e.g. `gemini-3.8-flash`. */
   model: string;
   /** Per-call deadline in milliseconds; the client aborts the request at this point. */
   timeoutMs: number;

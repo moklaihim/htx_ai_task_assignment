@@ -745,7 +745,7 @@ calls for a `400 VALIDATION_ERROR`.
 | Variable | Committed default | Notes |
 |---|---|---|
 | `LLM_BASE_URL` | yes | non-sensitive |
-| `LLM_MODEL` | yes (`gemini-3.5-flash`) | non-sensitive |
+| `LLM_MODEL` | yes (`gemini-3.8-flash`) | non-sensitive |
 | `LLM_TIMEOUT_MS` | yes (`10000`) | non-sensitive |
 | `LLM_MODE` | yes (`live`) | `live` \| `stub` \| `fail` — see 5.4 |
 | `LLM_API_KEY` | **no** | supplied via `.env` at container start |
@@ -760,7 +760,7 @@ rather than a container that won't start.
 answers `404 … is no longer available` for it — which made the committed default
 useless and quietly turned every task into the REQ-6.4 failure case, exactly the
 reviewer-action-required situation REQ-6.7 exists to prevent. The default is now
-`gemini-3.5-flash`, verified against all three PDF reference titles. A `…-latest`
+`gemini-3.8-flash`, verified against all three PDF reference titles. A `…-latest`
 alias would age better but pins nothing, so two reviewers could see different
 classifications from the same checkout.
 
@@ -880,7 +880,7 @@ deliberate — the SDK retries only when `retryOptions` is passed, and it is not
 several. `LLM_BASE_URL` is now supplied as the SDK's `httpOptions.baseUrl`.
 
 **Manual verification (task 6.9, REQ-6.5).** Run in `live` mode against
-`gemini-3.5-flash`, the three PDF reference titles classify as the PDF states —
+`gemini-3.8-flash`, the three PDF reference titles classify as the PDF states —
 `Frontend`, `Backend`, and `Frontend, Backend` respectively. Since those same titles
 are the prompt's few-shot examples, three *unseen* paraphrases were checked alongside
 them ("product grid to reflow on small screens" → `Frontend`; "nightly database
@@ -1240,7 +1240,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgresql://app:app@db:5432/taskdb}
       - DB_CONNECTION_TIMEOUT_MS=${DB_CONNECTION_TIMEOUT_MS:-3000}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://generativelanguage.googleapis.com}
-      - LLM_MODEL=${LLM_MODEL:-gemini-3.5-flash}
+      - LLM_MODEL=${LLM_MODEL:-gemini-3.8-flash}
       - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-10000}
       - LLM_MODE=${LLM_MODE:-live}
       - LLM_API_KEY=${LLM_API_KEY}

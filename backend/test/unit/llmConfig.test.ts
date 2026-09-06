@@ -7,7 +7,7 @@ describe('loadLlmConfig (6.1, REQ-6.7)', () => {
 
     expect(config).toEqual({
       baseUrl: 'https://generativelanguage.googleapis.com',
-      model: 'gemini-3.5-flash',
+      model: 'gemini-3.8-flash',
       timeoutMs: 10_000,
       mode: 'live',
       apiKey: null,
