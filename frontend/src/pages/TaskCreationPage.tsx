@@ -127,14 +127,21 @@ export function TaskCreationPage() {
     <main className="page">
       <h1 className="page__title">Create Task(s)</h1>
       <form onSubmit={handleSubmit} className="panel panel--padded">
-        {skills && (
-          <TaskFormNode
-            node={tree}
-            skills={skills}
-            onChange={setTree}
-            onAddSubtask={(localId) => setTree((current) => addSubtaskTo(current, localId))}
-          />
-        )}
+        {/* A deep tree indents further than any viewport is wide, so the
+          * nodes scroll horizontally inside the panel. Without this the form
+          * grew past the panel's right edge and out over the page background
+          * — the fields were unreachable and the white surface stopped short
+          * of them. */}
+        <div className="task-form-scroll">
+          {skills && (
+            <TaskFormNode
+              node={tree}
+              skills={skills}
+              onChange={setTree}
+              onAddSubtask={(localId) => setTree((current) => addSubtaskTo(current, localId))}
+            />
+          )}
+        </div>
 
         <div className="form-actions">
           <button

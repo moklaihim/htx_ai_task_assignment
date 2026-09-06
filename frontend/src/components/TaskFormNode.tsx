@@ -16,8 +16,11 @@ interface Props {
  * (REQ-5.6, design §6.3). There is deliberately no `TaskFormLevel2`: adding a
  * fourth or tenth level needs no new code, only more recursion.
  *
- * `depth` drives indentation and the outline number only — it changes no
- * behavior and has no maximum (REQ-5.4).
+ * `depth` drives indentation only — it changes no behavior and has no maximum
+ * (REQ-5.4). The indent itself is one step per nested level, applied by the
+ * stylesheet to `[data-depth]`; because the nodes are nested in the DOM the
+ * steps already accumulate, and the page scrolls a deep tree horizontally
+ * inside its panel rather than letting it run off the page.
  *
  * Edits travel back up one level at a time: a child hands its updated self to
  * this node, which folds it in with `replaceChild` and hands *itself* up. By
@@ -38,12 +41,18 @@ export function TaskFormNode({ node, skills, onChange, onAddSubtask, depth = 0 }
       data-testid="task-form-node"
       data-depth={depth}
       data-local-id={node.localId}
-      // Indent is data-driven (nesting depth); the rule and spacing that go
-      // with it are in the stylesheet, keyed off `data-depth`.
-      style={{ marginLeft: depth * 24 }}
     >
       <label>
-        <span className="field-label">{label}</span>
+        <span className="field-label">
+          {label}
+          {/* The title is the one field the form cannot save without, so it
+            * carries the conventional asterisk. `aria-hidden` because the
+            * input's own `required` already announces it to screen readers —
+            * without it the field reads as "Subtask star, required". */}
+          <span className="field-label__required" aria-hidden="true">
+            *
+          </span>
+        </span>
         <input
           className="text-input"
           value={node.title}

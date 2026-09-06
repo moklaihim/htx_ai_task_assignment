@@ -8,8 +8,9 @@
  *
  * Everything below is driven by the tokens in `:root`, so the palette, the
  * corner radius and the type scale each have exactly one definition. Layout
- * that depends on runtime data (indent by tree depth) stays inline in the
- * components; everything static lives here.
+ * lives here in full — including the subtask indent, which the components
+ * express as `data-depth` and the stylesheet turns into one step per nested
+ * level.
  */
 
 :root {
@@ -138,7 +139,10 @@ body {
 }
 
 .panel--padded {
-  padding: 1.25rem 1.5rem 1.5rem;
+  /* Published as a variable because `.task-form-scroll` bleeds to the panel's
+   * edges and has to give exactly this much back. */
+  --panel-pad-x: 1.5rem;
+  padding: 1.25rem var(--panel-pad-x) 1.5rem;
 }
 
 .panel__scroll {
@@ -341,14 +345,37 @@ body {
 
 /* ------------------------------------------------------- task creation form */
 
+/* A tree deeper than a handful of levels is indented wider than any viewport,
+ * so it scrolls here instead of overflowing the panel onto the page
+ * background. The negative margin lets a scrolled tree run to the panel's
+ * edges; the padding hands the same space back to the content and leaves room
+ * for focus rings, which `overflow` would otherwise clip. */
+.task-form-scroll {
+  overflow-x: auto;
+  margin: -0.25rem calc(-1 * var(--panel-pad-x)) 0;
+  padding: 0.25rem var(--panel-pad-x) 0.5rem;
+}
+
 .task-form-node {
   margin-top: 0.875rem;
+  /* Fields stay legible at any depth: past the point where the indent no
+   * longer fits, the container scrolls rather than squeezing the inputs. */
+  min-width: 21rem;
+}
+
+/* The root spans whatever its deepest branch needs, so the panel's own
+ * scroll width and the indent agree — otherwise the rules below would be
+ * drawn against a box narrower than the fields inside it. */
+.task-form-scroll > .task-form-node {
+  min-width: min-content;
 }
 
 /* Every node but the root sits under a rule that traces it back to its
- * parent; `data-depth` is set by the component for exactly this. */
+ * parent; `data-depth` is set by the component for exactly this. One step per
+ * level, and the steps accumulate because the nodes nest in the DOM. */
 .task-form-node:not([data-depth='0']) {
-  padding-left: 0.875rem;
+  margin-left: 0.5rem;
+  padding-left: 1rem;
   border-left: 2px solid var(--border);
 }
 
@@ -360,6 +387,13 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
+}
+
+/* Marks a field the form cannot be submitted without. Not colour alone: the
+ * asterisk is the mark, and the colour only reinforces it. */
+.field-label__required {
+  margin-left: 0.1875rem;
+  color: var(--danger);
 }
 
 .skills-fieldset {
@@ -480,6 +514,28 @@ body {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Phones and narrow splits: the panel and the indent both give up space so
+ * more of the field itself stays on screen before the tree starts to
+ * scroll. */
+@media (max-width: 600px) {
+  .page {
+    padding: 1.5rem 0.75rem 3rem;
+  }
+
+  .panel--padded {
+    --panel-pad-x: 1rem;
+  }
+
+  .task-form-node {
+    min-width: 17rem;
+  }
+
+  .task-form-node:not([data-depth='0']) {
+    margin-left: 0.25rem;
+    padding-left: 0.625rem;
   }
 }
 
