@@ -10,10 +10,9 @@ const migrationsDir = fileURLToPath(new URL('./migrations/', import.meta.url));
 
 /**
  * Applies every migration file not yet recorded in `schema_migrations`, in
- * filename order (design §3.3). Each file and its bookkeeping row are committed
- * in one transaction, so a failing migration leaves no partial state behind.
- * Already-applied files are skipped, which is what makes repeated container
- * starts safe (REQ-7.4).
+ * filename order (design §3.3). Each file and its bookkeeping row are
+ * committed in one transaction, so a failing migration leaves no partial
+ * state behind. Already-applied files are skipped (REQ-7.4).
  *
  * @returns the filenames applied by this call — empty when nothing was pending.
  */

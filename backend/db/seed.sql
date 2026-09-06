@@ -2,11 +2,9 @@
 -- Dave (Backend). Idempotent, because entrypoint.sh re-runs it on every container
 -- start against a volume that may already hold the data (REQ-7.4).
 --
--- These MUST stay three separate statements (design §3.4). A data-modifying CTE
--- is not visible to the rest of the same statement in Postgres, so folding these
--- into one statement would make step 3's joins see the tables as they were before
--- step 2 ran — matching zero rows on a fresh database and silently seeding no
--- skill links at all.
+-- These MUST stay three separate statements (design §3.4): a data-modifying CTE
+-- is not visible to the rest of the same statement in Postgres, so folding step
+-- 3's joins in with step 2 would match zero rows on a fresh database.
 
 -- 1. Skills
 INSERT INTO skills (name) VALUES ('Frontend'), ('Backend')

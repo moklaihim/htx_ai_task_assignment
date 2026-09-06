@@ -3,15 +3,11 @@
  *
  * Deterministic keyword classification, no network, no API key, no quota. It
  * exists so the integration and e2e suites can cover the *success* path of
- * skill inference without depending on an external service — a test that only
- * ever ran against real Gemini would be slow, flaky, and unrunnable offline or
- * on an exhausted free tier (REQ-0.9).
+ * skill inference without depending on an external service (REQ-0.9).
  *
- * It returns the same thing `callGemini` returns — raw JSON text — rather than
- * ids, so both modes flow through the identical `parseSkillInference` gate. A
- * stub that returned ids directly would bypass the one piece of code that keeps
- * invented skills out of the database, and the tests would then be exercising a
- * path production never takes.
+ * It returns the same thing `callGemini` returns — raw JSON text — rather
+ * than ids, so both modes flow through the identical `parseSkillInference`
+ * gate.
  */
 
 const FRONTEND_KEYWORDS = [
@@ -68,9 +64,8 @@ function matches(haystack: string, keywords: RegExp[]): boolean {
 
 /**
  * Word-boundary matching, with an optional plural suffix, rather than a plain
- * `includes`: a substring test makes "log" match "login" and "api" match
- * "rapid", which would silently misclassify and — since the stub is what the
- * tests assert against — bake the misclassification into the suite.
+ * `includes`: a substring test would make "log" match "login" and "api" match
+ * "rapid".
  */
 function toMatchers(keywords: string[]): RegExp[] {
   return keywords.map((keyword) => new RegExp(`\\b${keyword}(?:s|es)?\\b`));
@@ -86,15 +81,6 @@ const BACKEND_MATCHERS = toMatchers(BACKEND_KEYWORDS);
  * skills. A title matching **no** keyword at all comes back
  * `{"classifiable": false, "skills": []}` — the stub's stand-in for REQ-6.8's
  * "this isn't a software task I can classify".
- *
- * That last case used to return both skills, on the reasoning that an empty
- * classification was a failure (design §5.3) and a stub must not manufacture
- * failures. It no longer is one: "not classifiable" is a successful outcome
- * with its own response field, so the honest answer for a title this matcher
- * has nothing to say about is now expressible — and being able to reach that
- * path deterministically, with no network and no API key, is what lets the
- * integration and e2e suites cover it at all. Deliberate failures still come
- * from `fail` mode, which is unchanged.
  */
 export async function callStub(title: string): Promise<string> {
   const haystack = title.toLowerCase();

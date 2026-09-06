@@ -10,7 +10,7 @@ const seedFile = fileURLToPath(new URL('./seed.sql', import.meta.url));
  * Executes db/seed.sql (REQ-1.9). The file's three statements are sent in a
  * single simple query, which Postgres runs sequentially in one implicit
  * transaction, so each statement sees the rows the previous one inserted
- * (design §3.4). The SQL itself is idempotent, so re-running on every container
+ * (design §3.4). The SQL is idempotent, so re-running on every container
  * start changes nothing after the first (REQ-7.4).
  */
 export async function runSeed(pool: Pool): Promise<void> {

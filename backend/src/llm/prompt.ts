@@ -1,26 +1,22 @@
 /**
  * The classification prompt (design §5.2, REQ-6.5, REQ-6.8).
  *
- * Kept in its own module so the exact text is one reviewable artifact rather
- * than a template literal buried in the HTTP client — the prompt is the part
- * of this feature most likely to be iterated on, and the unit tests assert
- * against it directly.
+ * Kept in its own module so the exact text is one reviewable artifact, and
+ * the unit tests can assert against it directly.
  */
 
 /**
- * The fixed skill set (REQ-6.5). Deliberately a constant rather than something
- * read from the `skills` table: it is also the `enum` the model's response
- * schema is constrained to, and the few-shot examples below are written in
- * terms of these two names. Names that come back are still mapped against the
+ * The fixed skill set (REQ-6.5). A constant rather than something read from
+ * the `skills` table, since it is also the `enum` the model's response schema
+ * is constrained to. Names that come back are still mapped against the
  * seeded rows before anything is written (design §5.2).
  */
 export const VALID_SKILL_NAMES = ['Frontend', 'Backend'] as const;
 
 /**
- * One few-shot example. `classifiable: false` examples carry no skills — they
- * are the whole point of REQ-6.8: the title is free text, so "buy eggs" and
- * "123145" are ordinary inputs, and a model given only positive examples will
- * dutifully invent a classification for them.
+ * One few-shot example. `classifiable: false` examples carry no skills —
+ * they cover REQ-6.8: the title is free text, so "buy eggs" and "123145" are
+ * ordinary inputs that must not get an invented classification.
  */
 interface PromptExample {
   title: string;
@@ -29,18 +25,11 @@ interface PromptExample {
 }
 
 /**
- * Few-shot guidance, in three groups.
- *
- * 1. The three PDF Part 5.1 examples — the same titles REQ-6.5 lists as the
- *    reference cases, so the prompt is tuned on exactly what it is manually
- *    verified against (task 6.9).
- * 2. One terse but real task title. Without it, the "reject non-tasks" rule
- *    below reads as "reject anything short", and genuine titles like
- *    "Fix the login button alignment" start coming back unclassifiable — a
- *    false negative is just as wrong as the hallucination it replaced.
- * 3. Three non-tasks: an errand, digits, and keyboard mash. Together they
- *    cover the three ways free text arrives with no software work in it —
- *    meaningful-but-unrelated, structured-but-meaningless, and meaningless.
+ * Few-shot guidance, in three groups:
+ * 1. The three reference examples from REQ-6.5.
+ * 2. One terse but real task title, so short titles aren't rejected as
+ *    non-tasks.
+ * 3. Three non-tasks: an errand, digits, and keyboard mash.
  */
 const EXAMPLES: readonly PromptExample[] = [
   {
@@ -73,18 +62,12 @@ const EXAMPLES: readonly PromptExample[] = [
 
 /**
  * Builds the prompt for one task title (design §5.2). One call per node, from
- * that node's **own** title only — no parent or sibling context (assumption 7),
- * which is what makes a subtask classified on its own merits rather than
- * inheriting its parent's skills.
+ * that node's **own** title only — no parent or sibling context (assumption
+ * 7), so a subtask is classified on its own merits.
  *
  * The prompt asks two questions in a fixed order — *is* this a software task,
- * and only then *which* skills does it need — because the title is a free-text
- * field (REQ-6.8). A prompt that asks only the second question offers no way to
- * answer "neither", so the model picks a skill for "buy eggs" rather than
- * declining; the `classifiable` flag gives it somewhere to put that answer, and
- * the response schema (design §5.2) makes the flag mandatory rather than
- * optional prose. `classifiable` is asked first, and generated first, so the
- * decision is made before any skill has been committed to.
+ * and only then *which* skills does it need — since the title is a free-text
+ * field (REQ-6.8) and the model needs somewhere to say "neither".
  */
 export function buildPrompt(title: string): string {
   const examples = EXAMPLES.map(

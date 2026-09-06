@@ -2,15 +2,11 @@
  * Typed LLM configuration (design §5.1, REQ-6.7).
  *
  * Every `LLM_*` variable is read **once**, at module load, into one frozen
- * object. Reading `process.env` at each call site instead would let the
- * configuration drift mid-process and would scatter the same defaulting and
- * validation logic across the client, the route, and the tests.
+ * object, rather than re-reading `process.env` at each call site.
  *
- * Nothing here throws. A missing `LLM_API_KEY` in particular must not stop the
- * backend booting: the key is the one value that cannot be committed (REQ-6.7),
- * so a reviewer who forgets it should still get a running app where every
- * inference attempt simply fails and falls back per REQ-6.4 — a working app
- * with a clear notification rather than a container that won't start.
+ * Nothing here throws. A missing `LLM_API_KEY` must not stop the backend
+ * booting (REQ-6.7) — inference attempts simply fail and fall back per
+ * REQ-6.4.
  */
 
 /** `live` calls Gemini; `stub` and `fail` are the test doubles from design §5.4. */
@@ -45,11 +41,8 @@ function isLlmMode(value: string): value is LlmMode {
 }
 
 /**
- * A non-empty, trimmed value, or `undefined`. Compose passes unset variables
- * through as empty strings (`LLM_API_KEY=${LLM_API_KEY}` with nothing in
- * `.env`), so blank has to be treated exactly like absent — otherwise an
- * empty key would be sent as a real credential and the failure would surface
- * as a confusing 400 from Gemini instead of the intended fallback.
+ * A non-empty, trimmed value, or `undefined`. Blank must be treated like
+ * absent, since Compose can pass unset variables through as empty strings.
  */
 function readString(raw: string | undefined): string | undefined {
   const trimmed = raw?.trim();
@@ -57,13 +50,13 @@ function readString(raw: string | undefined): string | undefined {
 }
 
 /**
- * Builds the config from an environment-like object. Exported (and taking
- * `env` as a parameter) so unit tests can exercise the defaulting rules
- * without mutating the real `process.env` of the running test process.
+ * Builds the config from an environment-like object. Takes `env` as a
+ * parameter so unit tests can exercise the defaulting rules without mutating
+ * the real `process.env`.
  *
  * Unusable values fall back to the committed default with a warning rather
- * than throwing, for the same reason as the missing key: a typo in
- * `LLM_MODE` should degrade to the documented default, not prevent boot.
+ * than throwing — a typo in `LLM_MODE` should degrade gracefully, not
+ * prevent boot.
  */
 export function loadLlmConfig(env: NodeJS.ProcessEnv = process.env): LlmConfig {
   const rawMode = readString(env.LLM_MODE);
@@ -99,9 +92,8 @@ export function loadLlmConfig(env: NodeJS.ProcessEnv = process.env): LlmConfig {
 }
 
 /**
- * One-line summary for the startup log. The key itself is never logged —
- * only whether one is present, which is the part a reviewer debugging an
- * unexpected fallback actually needs (REQ-6.7).
+ * One-line summary for the startup log. The key itself is never logged, only
+ * whether one is present (REQ-6.7).
  */
 export function describeLlmConfig(config: LlmConfig): string {
   return `llm: mode=${config.mode} model=${config.model} baseUrl=${config.baseUrl} timeoutMs=${config.timeoutMs} apiKey=${config.apiKey ? 'set' : 'missing'}`;
