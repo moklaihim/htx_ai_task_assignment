@@ -78,7 +78,7 @@ export function TaskCreationPage() {
       // Colour carries the distinction before the text is even read — green
       // worked, slate is neutral information, red is broken.
       const notices = collectInferenceNotices(created);
-      console.log(`notices: ${notices}`)
+      
       // REQ-4.8 — the LLM chose these Skills. Worth saying out loud: inference
       // is invisible otherwise, since the user submitted the form with the
       // Skills list empty and lands on a page where the row simply has skills.
