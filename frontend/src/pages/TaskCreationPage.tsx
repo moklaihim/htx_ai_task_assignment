@@ -5,7 +5,7 @@ import { createTask } from '../api/tasks';
 import { ApiError } from '../api/client';
 import { toast } from '../components/Toaster';
 import { TaskFormNode } from '../components/TaskFormNode';
-import { collectSkillInferenceFailures } from '../lib/taskTree';
+import { collectInferenceNotices, type ClassifiedTask } from '../lib/taskTree';
 import {
   addSubtaskTo,
   countNodes,
@@ -67,16 +67,49 @@ export function TaskCreationPage() {
       const saved = countNodes(tree);
       toast.success(saved === 1 ? `Created "${tree.title.trim()}"` : `Created ${saved} tasks`);
 
-      // REQ-4.6 — automatic skill detection failed for these nodes. Purely
-      // informational: the tasks are already saved with an empty Skills list
-      // (REQ-6.4), so this neither blocks nor rolls back the save, and the
-      // navigation below happens either way. A toast rather than a dialog for
-      // exactly that reason — there is no decision for the user to make, only
-      // something to know, and the Skills can be set afterwards.
-      const failedTitles = collectSkillInferenceFailures(created);
-      if (failedTitles.length > 0) {
+      // All three notices are purely informational: the tasks are already saved
+      // (REQ-6.4), so none blocks or rolls back the save, and the navigation
+      // below happens either way. Toasts rather than a dialog for exactly that
+      // reason — there is no decision for the user to make here, only something
+      // to know.
+      //
+      // One toast per *outcome*, not per task: a five-node tree with a mixed
+      // result raises at most three, and each names the tasks it covers.
+      // Colour carries the distinction before the text is even read — green
+      // worked, slate is neutral information, red is broken.
+      const notices = collectInferenceNotices(created);
+      console.log(`notices: ${notices}`)
+      // REQ-4.8 — the LLM chose these Skills. Worth saying out loud: inference
+      // is invisible otherwise, since the user submitted the form with the
+      // Skills list empty and lands on a page where the row simply has skills.
+      // Naming them also makes a wrong guess correctable rather than unnoticed.
+      if (notices.classified.length > 0) {
+        toast.success(describeClassified(notices.classified));
+      }
+
+      // REQ-4.6 — the LLM call itself went wrong for these nodes.
+      //
+      // Both this and the REQ-4.7 notice below state the outcome and stop. An
+      // earlier draft suggested adding the Skills afterwards, which this app
+      // cannot do: a Task's title and Skills are fixed at creation (the only
+      // mutations are `PATCH /assign` and `PATCH /status`), so the sole remedy
+      // is to create the Task again. Telling someone to do something the UI
+      // does not offer is worse than telling them nothing.
+      if (notices.failed.length > 0) {
         toast.error(
-          `Automatic skill detection failed for ${describeTitles(failedTitles)}. Saved with no Skills — you can add them later.`,
+          `Automatic skill detection failed for ${describeTitles(notices.failed)}. Saved with no Skills.`,
+        );
+      }
+
+      // REQ-4.7 — the LLM worked and reported that these titles are not
+      // software tasks it can classify (REQ-6.8). An `info` toast, not an
+      // error: nothing failed, and dressing a correct answer up as a failure is
+      // what sent users looking for a bug that wasn't there. The wording names
+      // the actual cause — the title, not the system — which is the part the
+      // user can act on next time.
+      if (notices.unclassifiable.length > 0) {
+        toast.info(
+          `No Skills detected for ${describeTitles(notices.unclassifiable)} — the title doesn't describe a software task. Saved with no Skills.`,
         );
       }
 
@@ -119,9 +152,31 @@ export function TaskCreationPage() {
 }
 
 /**
- * Names the affected tasks in the REQ-4.6 notification, quoted so a title
- * reads as a title. A long tree could flag many nodes, so the list is capped —
- * a toast that grows to fill the screen stops being non-modal in practice.
+ * The REQ-4.8 confirmation. A single task names its Skills (`Frontend and
+ * Backend for "Build the login form"`), because that is the whole content of
+ * the message and it fits; several tasks name only the titles, since one line
+ * per task is what turns a toast into a wall of text. `describeTitles` handles
+ * the capping either way.
+ */
+function describeClassified(classified: ClassifiedTask[]): string {
+  const titles = classified.map((task) => task.title);
+  const [only] = classified;
+
+  return classified.length === 1
+    ? `Skills detected — ${joinWords(only!.skills)} for ${describeTitles(titles)}.`
+    : `Skills detected for ${describeTitles(titles)}.`;
+}
+
+/** `["Frontend","Backend"]` → `Frontend and Backend`. */
+function joinWords(words: string[]): string {
+  return words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : words[0] ?? '';
+}
+
+/**
+ * Names the affected tasks in the REQ-4.6 / REQ-4.7 / REQ-4.8 notifications,
+ * quoted so a title reads as a title. A long tree could flag many nodes, so the
+ * list is capped — a toast that grows to fill the screen stops being non-modal
+ * in practice.
  */
 function describeTitles(titles: string[]): string {
   const shown = titles.slice(0, 3).map((title) => `"${title}"`);

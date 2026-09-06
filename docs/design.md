@@ -395,32 +395,62 @@ once standalone and once inside its parent.
 `skillIds` and `subtasks` are both optional and default to `[]`. An empty `skillIds`
 is the trigger for LLM inference (REQ-6.1, assumption 5).
 
-**The `skillInferenceFailed` field (REQ-6.6).** The `POST /tasks` response uses the
-standard Task shape above, with one extra optional boolean field, `skillInferenceFailed`,
-on each node. Its three possible states:
+**The inference marker fields (REQ-6.6, REQ-6.8, REQ-6.9).** The `POST /tasks`
+response uses the standard Task shape above, with three extra optional boolean fields
+on each node: `skillInferenceApplied`, `skillInferenceFailed` and
+`skillInferenceUnclassifiable`. At most one is ever present. The states:
 
-| `skills` | `skillInferenceFailed` | Meaning |
+| `skills` | Marker | Meaning |
 |---|---|---|
-| non-empty | field absent | Skills were supplied by the user, or inferred successfully |
-| `[]` | field absent | Skills were supplied by the user as an explicit empty list — not reachable in the shipped build, since an empty `skillIds` always triggers inference |
-| `[]` | `true` | Inference was attempted and did not yield any seeded skill (REQ-6.4) |
+| non-empty | none | Skills were supplied by the user — inference never ran for this node |
+| non-empty | `skillInferenceApplied: true` | Skills were **chosen by the LLM** (REQ-6.9) |
+| `[]` | none | Skills were supplied by the user as an explicit empty list — not reachable in the shipped build, since an empty `skillIds` always triggers inference |
+| `[]` | `skillInferenceFailed: true` | Inference was **attempted and went wrong** — network error, timeout, unusable response (REQ-6.4) |
+| `[]` | `skillInferenceUnclassifiable: true` | Inference **succeeded**, and the answer is that the title is not a software task — "buy eggs", "123145" (REQ-6.8) |
 
-**Implementation (phase 6).** The middle row was originally written as "the LLM
+**Implementation (phase 6).** The second row was originally written as "the LLM
 legitimately returned none". Phase 6 made that state a *failure* instead, per §5.3's
 "JSON with no valid skill names": a response of `{"skills":[]}`, or one naming only
 skills that aren't seeded, leaves the task exactly as unclassified as a network error
 does, and REQ-6.1's promise is that a task created without skills gets some. Reporting
 one silently and the other with a toast would draw a distinction the user cannot act
 on. The row is kept in the table because it remains the correct reading of the
-response shape — a client must not assume an empty `skills` implies the flag.
+response shape — a client must not assume an empty `skills` implies a marker.
 
-Without this field the last two rows would be indistinguishable — both are an empty
-`skills` array — and the frontend would have no way to know whether to show the
-failure notification required by REQ-4.6. The field appears **only** in the
-`POST /tasks` response, never in `GET` responses, because it describes what happened
-during that one request rather than a stored property of the task (see 3.2).
+**Implementation (phase 8, REQ-6.8).** The fourth row is new, and it is a *third*
+outcome rather than a shade of the second. The title is a free-text field, so a
+title that isn't a software task at all is an ordinary input, not an anomaly; the
+prompt and response schema (§5.2) now let the model say so, and a model that says so
+has worked correctly. Folding that into `skillInferenceFailed` — the shipped
+behaviour before this change — told the user their system had broken when it had
+done exactly the right thing, and there was no other reading available: an empty
+`skills` array is all the two states have in common. Splitting the marker is what
+lets the frontend answer "is this an error?" without guessing (REQ-4.6 vs REQ-4.7).
 
-Example of a node where inference failed:
+Without these fields the last three rows would be indistinguishable — all are an
+empty `skills` array — and so would the first two, which are both a populated one.
+`skillInferenceApplied` is what separates that pair: inference is otherwise
+completely invisible to a user who submitted the form with the Skills list empty and
+landed on a page where the row simply has skills, and REQ-4.8's confirmation needs to
+name the nodes the LLM actually decided (phase 8). All three fields appear **only**
+in the `POST /tasks` response, never in `GET` responses, because they describe what
+happened during that one request rather than a stored property of the task (see 3.2).
+
+Example of a node the LLM classified, one where inference failed, and one whose
+title could not be classified:
+
+```json
+{
+  "id": 2,
+  "title": "Build the profile edit form",
+  "status": "To-do",
+  "assignee": null,
+  "skills": [ { "id": 1, "name": "Frontend" } ],
+  "skillInferenceApplied": true,
+  "subtasks": []
+}
+```
+
 
 ```json
 {
@@ -430,6 +460,18 @@ Example of a node where inference failed:
   "assignee": null,
   "skills": [],
   "skillInferenceFailed": true,
+  "subtasks": []
+}
+```
+
+```json
+{
+  "id": 4,
+  "title": "buy eggs",
+  "status": "To-do",
+  "assignee": null,
+  "skills": [],
+  "skillInferenceUnclassifiable": true,
   "subtasks": []
 }
 ```
@@ -666,8 +708,9 @@ leaves nothing behind rather than a half-built tree:
 3. Run LLM inference for those nodes **in parallel** (`Promise.allSettled`) — see 5.2.
 4. `BEGIN`. Insert depth-first: `INSERT INTO tasks … RETURNING id`, then pass that id
    as `parent_task_id` to each child and recurse. Insert `task_skills` rows per node.
-5. `COMMIT`. Re-read the tree (4.4) and return it, attaching any
-   `skillInferenceFailed` flags from step 3.
+5. `COMMIT`. Re-read the tree (4.4) and return it, attaching the
+   `skillInferenceApplied` / `skillInferenceFailed` / `skillInferenceUnclassifiable`
+   flags from step 3.
 
 Inference runs before the transaction opens, not inside it. Holding a transaction
 open across several network calls to an external API would keep a database
@@ -737,30 +780,75 @@ One call per node needing skills, from the node's own title only (assumption 7 �
 parent context, no sibling context). Nodes are inferred concurrently, so a tree with
 five unskilled nodes costs roughly one LLM round trip, not five.
 
-Prompt, using the PDF's three examples as few-shot guidance (REQ-6.5):
+Prompt, using the PDF's three examples as few-shot guidance (REQ-6.5) and asking two
+questions in a fixed order (REQ-6.8):
 
 ```
 You classify software task descriptions by the skills required to implement them.
 
 Valid skills: Frontend, Backend
-Return one or both. Return only JSON: {"skills": ["Frontend"]}
+- Frontend: user-facing work — UI, layout, styling, client-side behaviour in a
+  browser or app.
+- Backend: server-side work — APIs, business logic, databases, jobs, auth,
+  infrastructure.
+
+Answer two questions, in this order.
+
+1. Is this text a software task at all? ... If it is not a software task, or you
+   cannot tell what software work it asks for, answer
+   {"classifiable": false, "skills": []} and stop. Do not guess a skill for such
+   text — answering "Frontend" or "Backend" for it is wrong.
+
+2. Only if it IS a software task, choose the skills it requires. Return one or
+   both, never an empty list, with "classifiable": true.
+
+Return only JSON: {"classifiable": true, "skills": ["Frontend"]}
 
 Examples:
 "As a visitor, I want to see a responsive homepage so that I can easily navigate
- on both desktop and mobile devices." -> {"skills":["Frontend"]}
+ on both desktop and mobile devices." -> {"classifiable":true,"skills":["Frontend"]}
 "As a system administrator, I want audit logs of all data access and modifications
  so that I can ensure compliance with data protection regulations and investigate
- any security incidents." -> {"skills":["Backend"]}
+ any security incidents." -> {"classifiable":true,"skills":["Backend"]}
 "As a logged-in user, I want to update my profile information and upload a profile
  picture so that my account details are accurate and personalized."
- -> {"skills":["Frontend","Backend"]}
+ -> {"classifiable":true,"skills":["Frontend","Backend"]}
+"Fix the login button alignment on Safari" -> {"classifiable":true,"skills":["Frontend"]}
+"buy eggs" -> {"classifiable":false,"skills":[]}
+"123145" -> {"classifiable":false,"skills":[]}
+"asdkjhasdkjh" -> {"classifiable":false,"skills":[]}
 
 Task: "<title>"
 ```
 
+**Why the first question exists (REQ-6.8).** The title is free text, so "buy eggs"
+and "123145" are ordinary inputs. A prompt that asks only "which skills?" offers no
+answer other than a skill, so the model supplies one — which model, and how often,
+varies, which is worse than a consistent wrong answer because it looks like
+flakiness. Giving the refusal a name, a shape and its own examples turns "I can't
+classify this" from an off-script response into the expected one.
+
+The negative examples cover the three ways free text arrives with no software work
+in it — meaningful but unrelated, structured but meaningless, and meaningless — and
+are deliberately balanced by a *terse but real* title ("Fix the login button
+alignment on Safari"). Without that fourth example the rule reads as "reject anything
+short", and real one-line titles start coming back unclassifiable; a false negative
+is no better than the hallucination it replaced.
+
 Gemini's `responseMimeType: "application/json"` with a response schema constrains
 output to the enum, which removes most parsing failures at the source rather than
-handling them after the fact.
+handling them after the fact. The schema carries `classifiable` as a **required**
+boolean, listed before `skills` in `propertyOrdering`: required so it cannot be
+quietly omitted on the titles that need it most, and ordered first because
+generation is left to right, so the model commits to "is this a task" before it has
+emitted a skill name it would then have to contradict.
+
+`classifiable: false` wins over any `skills` the same response happens to list. A
+model that says both has contradicted itself, and the refusal is both the answer it
+was asked to decide first and the only one that cannot put a wrong skill on a task.
+A response that omits `classifiable` entirely is read as `true` — that only happens
+if a model ignores its schema, and "classify what you were given" is the safer of
+the two readings, since defaulting to `false` would discard skills it did return.
 
 Returned names are mapped to `skills.id` values. Anything not matching a seeded
 skill name is dropped rather than created — the skill set is fixed at
@@ -803,34 +891,79 @@ experiencing high demand`; that is handled as an ordinary failure (5.3) rather t
 retried, since the fallback already keeps task creation working and a retry loop
 would multiply the latency of the very request the user is waiting on.
 
-### 5.3 Failure handling (REQ-6.4, REQ-6.6, REQ-4.6)
+**Manual verification (phase 8, REQ-6.8).** Re-run in `live` mode after the prompt
+change, over fourteen titles: the three PDF reference titles still classify as the
+PDF states, and three unseen paraphrases still generalise. Five non-tasks — `buy
+eggs`, `123145`, `asdlkjqwe zxcv`, `hello`, `What time is the meeting tomorrow?` —
+all came back `{"classifiable": false, "skills": []}` where the previous prompt
+returned a skill for each. Three *terse but real* titles — "Add pagination to the
+orders endpoint" (`Backend`), "Dark mode toggle in settings" (`Frontend`), "Migrate
+the payments service to the new queue" (`Backend`) — were checked in the same run,
+because the failure mode a refusal instruction invites is over-refusal: they are the
+evidence the model is judging content rather than length.
 
-Treated as failures: network error, non-2xx, timeout, unparseable JSON, JSON with no
-valid skill names.
+### 5.3 Failure handling (REQ-6.4, REQ-6.6, REQ-6.8, REQ-4.6, REQ-4.7)
 
-On failure the node is created with **no skills** and marked
-`skillInferenceFailed: true` in the response. The task creation itself always
-succeeds — an external API being down must not stop someone recording a task.
+Inference for one node has three outcomes, not two:
+
+| Outcome | Trigger | Response marker | Frontend |
+|---|---|---|---|
+| **classified** | at least one seeded skill name returned | `skillInferenceApplied: true` | success toast (REQ-4.8) |
+| **failed** | network error, non-2xx, timeout, unparseable JSON, wrong shape, or `classifiable: true` with no valid skill name | `skillInferenceFailed: true` | error toast (REQ-4.6) |
+| **unclassifiable** | `classifiable: false` — the model answered, and the title is not a software task | `skillInferenceUnclassifiable: true` | info toast (REQ-4.7) |
+
+`inferMissingSkills` reports one outcome per node it was asked about, including the
+successful ones — success is reported because it is otherwise invisible (§4.1), and
+because a function that returns only problems makes "nothing happened" and "everything
+worked" the same value.
+
+The last row is the one that must not be collapsed into the middle one. Both leave
+the node with an empty `skills` array, but only one of them means something went
+wrong; reporting a correct refusal as a failure sends the user looking for a bug
+that isn't there, and — since the fix differs — leaves them without the one piece of
+information that would help (the *title* is the problem, not the system).
+
+`classifiable: true` with no usable skill name stays a **failure**: the model called
+the title a software task and then named nothing actionable, which is a
+self-contradiction rather than an answer. REQ-6.8 gave it a way to decline honestly;
+this is not that.
+
+In both non-classified cases the node is created with **no skills**. Task creation
+always succeeds — an external API being down, or a title that isn't a task, must not
+stop someone recording it.
 
 `Promise.allSettled` (not `Promise.all`) is deliberate: one node failing must not
 cancel inference for its siblings.
 
-The frontend reads the flag and shows a transient, non-blocking notification
-(REQ-4.6). Failures are also logged server-side with the task title and the reason,
-so a reviewer seeing the toast can find out why in the container logs.
+Both outcomes are logged server-side with the task title, failures at `warn` with
+the reason (so a reviewer seeing the toast can find out why in the container logs)
+and refusals at `info` — logging a correct answer as a warning would train a reviewer
+to ignore the line that means something actually broke.
 
-**Implementation (phase 6).** The route logs one `llm: skill inference failed for
-"<title>": <reason>` line per failure and then calls `markInferenceFailures`, which
-copies the flags onto the re-read tree by walking request and response in lockstep —
-sound because `insertTaskTree` writes depth-first and the read path orders by id, so
+**Implementation (phases 6, 8).** `inferMissingSkills` returns one `InferenceOutcome`
+per node, tagged `classified`, `failed` (with a reason) or `unclassifiable`; the route
+logs the latter two — `classified` is not logged, since one line per inferred node
+would bury the lines that mean something — and then calls `markInferenceOutcomes`,
+which copies the corresponding flag
+onto the re-read tree by walking request and response in lockstep — sound because
+`insertTaskTree` writes depth-first and the read path orders by id, so
 `response.subtasks[i]` is the row created from `request.subtasks[i]`. Matching on
 title instead would flag the wrong node whenever two subtasks share a name. On the
-frontend, `collectSkillInferenceFailures` (`src/lib/taskTree.ts`) gathers the flagged
-titles from the whole response tree and `TaskCreationPage` raises one `toast.error`
-naming them (capped at three plus "and N more", since a toast that grows to fill the
-screen is no longer non-modal in practice). It is raised *after* the success toast
-and *before* `navigate('/')`, so the save completes either way — the notification is
-informational, never a gate.
+frontend, `collectInferenceNotices` (`src/lib/taskTree.ts`) walks the whole response
+tree once and returns the flagged titles in three lists, and `TaskCreationPage` raises
+at most one toast for each: `toast.success` for classified nodes (REQ-4.8),
+`toast.error` for failures (REQ-4.6) and `toast.info` for unclassifiable titles
+(REQ-4.7), each naming its tasks (capped at three plus "and N more", since a toast
+that grows to fill the screen is no longer non-modal in practice). The success toast
+also names the Skills when it covers a single task — "we picked something for you" is
+only useful alongside *what* was picked, and seeing it is what makes a wrong guess
+correctable instead of unnoticed; past one task the skill names are dropped, because
+one line per task is what turns a toast into a wall of text. All three are raised
+*after* the "Created" toast and *before* `navigate('/')`, so the save completes either
+way — the notifications are informational, never a gate. `info` is a third toast style
+rather than a reworded error: colour is the first thing read, a red toast saying
+"nothing went wrong" is not believed, and with three outcomes the palette (green,
+slate, red) carries the distinction before the text does.
 
 ### 5.4 Test double
 
@@ -844,13 +977,20 @@ production path is unchanged.
 **Implementation (phase 6).** `src/llm/inferSkills.ts` is the single entry point the
 route uses; the three modes differ **only** in where the raw response text comes from
 (`callGemini`, `callStub`, or an immediate throw), after which all of them go through
-the same `parseSkillIds` gate. A stub that returned skill ids directly would bypass
-the one piece of code keeping invented skills out of the database, so a passing stub
-test would say nothing about `live`. The stub matches keywords on word boundaries
-rather than by substring — `includes('log')` also matches "login" — and a title with
-no signal either way falls back to **both** skills rather than none, because an empty
-classification is a failure per 5.3 and the double whose job is the success path must
-not manufacture failures; `fail` mode exists for those.
+the same `parseSkillInference` gate. A stub that returned skill ids directly would
+bypass the one piece of code keeping invented skills out of the database, so a passing
+stub test would say nothing about `live`. The stub matches keywords on word boundaries
+rather than by substring — `includes('log')` also matches "login".
+
+**Implementation (phase 8).** A title matching no keyword at all now returns
+`{"classifiable": false, "skills": []}` instead of falling back to both skills. The
+old fallback existed because an empty classification was a failure per 5.3 and a
+double whose job is the success path must not manufacture failures. That reasoning
+expired with REQ-6.8: "not classifiable" is now a successful outcome with its own
+response field, so it is the honest answer for a title this matcher has nothing to
+say about — and being able to reach that outcome with no network and no API key is
+what lets the integration and e2e suites cover REQ-6.8 and REQ-4.7 at all. Deliberate
+failures still come from `fail` mode, unchanged.
 
 ---
 
@@ -1253,8 +1393,11 @@ exist until phases 5 and 6:
 - `POST /tasks` with a nested body → all nodes created with correct `parent_task_id`.
 - `PATCH /status` → `Done` with a `To-do` grandchild → `400 SUBTASKS_NOT_DONE`;
   after the grandchild is `Done`, the same call → `200`.
-- LLM in `stub` mode → empty `skillIds` gets filled; in `fail` mode → task still
-  created, `skillInferenceFailed: true` present.
+- LLM in `stub` mode → empty `skillIds` gets filled and marked
+  `skillInferenceApplied: true` (while user-supplied skills are left unmarked), and a
+  title the stub cannot classify → task still created with
+  `skillInferenceUnclassifiable: true` and no failure flag; in `fail` mode → task
+  still created, `skillInferenceFailed: true` present.
 
 **Implementation (phase 6).** `LLM_MODE` is per *file*, not per test: `src/llm/config.ts`
 reads the environment once at module load, so a file selects its mode by setting
@@ -1267,7 +1410,8 @@ to have `LLM_API_KEY` exported (REQ-0.9). Under that default a node created with
 skills keeps the empty `skills` array the phase-3 and phase-5 tests were written
 against; the one assertion that needed changing was the phase-5 "a fresh read agrees
 with the POST response" deep equality, which now drops the response-only
-`skillInferenceFailed` field before comparing — a `GET` must not carry it (§4.1).
+`skillInferenceFailed` field before comparing — a `GET` must not carry it (§4.1) — and
+drops the other two markers for the same reason.
 
 ### 8.3 End-to-end (Playwright)
 
@@ -1282,12 +1426,14 @@ scenario. These cover the interaction rules that no API test can reach.
 | E2E-4 | Change status through its own Update button | REQ-3.5, 3.6 |
 | E2E-5 | Build a 3-level tree with "Add Subtask" at each level, save, reopen the list | REQ-5.4–5.7; nesting preserved |
 | E2E-6 | Set a parent to `Done` while a grandchild is `To-do` → error toast, dropdown reverts; mark all descendants `Done`, retry → succeeds | REQ-5.3, 2.5 |
-| E2E-7 | `LLM_MODE=stub`: create a task with no skills → skills appear without user action | REQ-6.1, 6.3 |
+| E2E-7 | `LLM_MODE=stub`: create a task with no skills → skills appear without user action, green toast naming them | REQ-6.1, 6.3, 4.8 |
 | E2E-8 | `LLM_MODE=fail`: create a task with no skills → task saved with no skills, non-modal toast appears and auto-dismisses | REQ-6.4, 4.6 |
+| E2E-9 | `LLM_MODE=stub`: create a task whose title the stub cannot classify → task saved with no skills, an **info** toast naming the title, and no error toast | REQ-6.8, 4.7 |
 
-E2E-3 and E2E-8 are the reason this layer exists: "the button is disabled until the
-value changes" and "a toast appears and then disappears" are statements about the
-browser, not about HTTP responses.
+E2E-3, E2E-8 and E2E-9 are the reason this layer exists: "the button is disabled until the
+value changes", "a toast appears and then disappears", and "this notice is the
+neutral one, not the red one" are statements about the browser, not about HTTP
+responses.
 
 Covered by REQ-0.9.
 

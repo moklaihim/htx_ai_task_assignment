@@ -124,6 +124,18 @@ PDF's own Part numbers where applicable.
   were left empty for them. THE affected Task(s) SHALL still be saved with an empty
   Skills list, per REQ-6.4 — this notification is informational only and SHALL NOT
   block or roll back the save.
+- **REQ-4.7**: WHEN the `POST /tasks` response marks one or more nodes as
+  unclassifiable (REQ-6.8), THE Task Creation Page SHALL display a non-modal,
+  auto-dismissing notification that is visually and textually distinct from the
+  REQ-4.6 failure notification — stating that no Skills were detected because the
+  title does not describe a software task, and SHALL NOT present it as an error.
+  THE affected Task(s) SHALL still be saved with an empty Skills list.
+- **REQ-4.8**: WHEN the `POST /tasks` response marks one or more nodes as having
+  had their Skills chosen by the LLM (REQ-6.9), THE Task Creation Page SHALL
+  display a non-modal, auto-dismissing confirmation naming the affected Task(s)
+  and, for a single Task, the Skill(s) chosen. IT SHALL be visually distinct from
+  the REQ-4.6 and REQ-4.7 notifications, so the three outcomes of inference are
+  told apart by colour before the text is read.
 
 ## 5. Subtasks (Part 4)
 
@@ -186,6 +198,18 @@ This is the same page defined in REQ-4.1, extended — not a second, separate pa
   NOT be committed to the repository in any form — not in source, not in a
   Dockerfile, not baked into a built image layer — and SHALL be supplied only at
   container-start time via an environment variable.
+- **REQ-6.8**: THE Task title is free text and is not guaranteed to describe a
+  software task at all ("buy eggs", "123145", gibberish). THE prompt and the
+  response schema SHALL give the LLM an explicit way to answer "this is not a
+  software task I can classify", and THE SYSTEM SHALL NOT assign Skills to such a
+  title. THE `POST /tasks` response SHALL mark that node with an indicator
+  (`skillInferenceUnclassifiable: true`) distinct from REQ-6.6's failure
+  indicator, because no failure has occurred — the LLM answered correctly.
+- **REQ-6.9**: WHEN the LLM successfully infers Skills for a Task/subtask node,
+  THE `POST /tasks` response SHALL mark that node with an indicator
+  (`skillInferenceApplied: true`), distinguishing Skills chosen by the LLM from
+  Skills the user selected — a populated Skills list is otherwise identical in
+  both cases, leaving REQ-4.8's confirmation nothing to key off.
 
 ## 7. Containerization (Part 6)
 
@@ -246,7 +270,12 @@ restated in the README so it's clear what was assumed versus explicitly required
    optional skills field, same LLM classification path. A subtask's required skills
    are inferred from *its own* title, standalone, per REQ-6.1. A subtask never
    copies or inherits skills from its parent Task's skills.
-8. **Task List "..." column** — the PDF's Task List wireframe shows an unlabelled
+8. **Titles that aren't software tasks** — the PDF's examples are all user stories,
+   but the title is a free-text field, so "buy eggs", "123145" or gibberish are
+   ordinary inputs. Read as: the LLM must be given an explicit way to decline
+   rather than being forced to pick a skill, and a declined title is reported to
+   the user as information rather than as a failure (REQ-6.8, REQ-4.7).
+9. **Task List "..." column** — the PDF's Task List wireframe shows an unlabelled
    "..." column between Skills and Status. This is read as an indication that further
    Task attributes *may* be displayed, not as a requirement for any specific
    additional column. No extra column is implemented.

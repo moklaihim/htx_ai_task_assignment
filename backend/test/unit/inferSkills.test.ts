@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { inferSkillIds } from '../../src/llm/inferSkills.js';
+import { inferSkills } from '../../src/llm/inferSkills.js';
 import { loadLlmConfig, type LlmConfig } from '../../src/llm/config.js';
 import type { Skill } from '../../src/types/task.js';
 
@@ -23,13 +23,15 @@ describe('LLM_MODE dispatch (6.4, design §5.4)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const config = configForMode('stub');
-    const first = await inferSkillIds('Build the responsive homepage', SEEDED, config);
-    const second = await inferSkillIds('Build the responsive homepage', SEEDED, config);
+    const first = await inferSkills('Build the responsive homepage', SEEDED, config);
+    const second = await inferSkills('Build the responsive homepage', SEEDED, config);
 
-    expect(first).toEqual([1]);
+    expect(first).toEqual({ classifiable: true, skillIds: [1] });
     expect(second).toEqual(first);
-    expect(await inferSkillIds('Add an audit log endpoint', SEEDED, config)).toEqual([2]);
-    expect(await inferSkillIds('Something entirely unrelated', SEEDED, config)).toEqual([1, 2]);
+    expect(await inferSkills('Add an audit log endpoint', SEEDED, config)).toEqual({
+      classifiable: true,
+      skillIds: [2],
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -38,14 +40,29 @@ describe('LLM_MODE dispatch (6.4, design §5.4)', () => {
     const config = loadLlmConfig({ LLM_MODE: 'stub' });
 
     expect(config.apiKey).toBeNull();
-    await expect(inferSkillIds('Style the login form', SEEDED, config)).resolves.toEqual([1]);
+    await expect(inferSkills('Style the login form', SEEDED, config)).resolves.toEqual({
+      classifiable: true,
+      skillIds: [1],
+    });
+  });
+
+  it('stub: a title it has nothing to say about comes back unclassifiable, not as a failure', async () => {
+    // REQ-6.8 through the stub (design §5.4): no keyword matched, so the honest
+    // answer is "not classifiable" — a resolved outcome, not a rejection, which
+    // is what lets the offline suites cover that path at all.
+    const config = configForMode('stub');
+
+    await expect(inferSkills('buy eggs', SEEDED, config)).resolves.toEqual({
+      classifiable: false,
+    });
+    await expect(inferSkills('123145', SEEDED, config)).resolves.toEqual({ classifiable: false });
   });
 
   it('fail: always throws, without a network call', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(inferSkillIds('Anything at all', SEEDED, configForMode('fail'))).rejects.toThrow(
+    await expect(inferSkills('Anything at all', SEEDED, configForMode('fail'))).rejects.toThrow(
       'LLM_MODE=fail',
     );
     expect(fetchMock).not.toHaveBeenCalled();
@@ -56,17 +73,25 @@ describe('LLM_MODE dispatch (6.4, design §5.4)', () => {
       async () =>
         new Response(
           JSON.stringify({
-            candidates: [{ content: { parts: [{ text: '{"skills":["Backend","Kubernetes"]}' }] } }],
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: '{"classifiable":true,"skills":["Backend","Kubernetes"]}' }],
+                },
+              },
+            ],
           }),
           { status: 200 },
         ),
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    // The invented "Kubernetes" is dropped by parseSkillIds, not by the client.
-    await expect(inferSkillIds('Add audit logs', SEEDED, configForMode('live'))).resolves.toEqual([
-      2,
-    ]);
+    // The invented "Kubernetes" is dropped by parseSkillInference, not by the
+    // client.
+    await expect(inferSkills('Add audit logs', SEEDED, configForMode('live'))).resolves.toEqual({
+      classifiable: true,
+      skillIds: [2],
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -74,15 +99,18 @@ describe('LLM_MODE dispatch (6.4, design §5.4)', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })));
     const title = 'Build the responsive homepage';
 
-    await expect(inferSkillIds(title, SEEDED, configForMode('stub'))).resolves.toEqual([1]);
-    await expect(inferSkillIds(title, SEEDED, configForMode('fail'))).rejects.toThrow();
-    await expect(inferSkillIds(title, SEEDED, configForMode('live'))).rejects.toThrow('HTTP 500');
+    await expect(inferSkills(title, SEEDED, configForMode('stub'))).resolves.toEqual({
+      classifiable: true,
+      skillIds: [1],
+    });
+    await expect(inferSkills(title, SEEDED, configForMode('fail'))).rejects.toThrow();
+    await expect(inferSkills(title, SEEDED, configForMode('live'))).rejects.toThrow('HTTP 500');
   });
 
   it('an unknown LLM_MODE degrades to live rather than to a test double', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })));
 
-    await expect(inferSkillIds('Anything', SEEDED, configForMode('stubb'))).rejects.toThrow(
+    await expect(inferSkills('Anything', SEEDED, configForMode('stubb'))).rejects.toThrow(
       'HTTP 500',
     );
   });

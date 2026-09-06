@@ -64,6 +64,26 @@ describe('callGemini (6.2, design §5.2)', () => {
     expect(prompt).toContain('profile picture');
   });
 
+  it('tells the model how to decline a title that is not a software task (REQ-6.8)', async () => {
+    const fetchMock = vi.fn(async () => geminiOk('{"classifiable":false,"skills":[]}'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callGemini('buy eggs', config);
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const prompt = JSON.parse(init.body as string).contents[0].parts[0].text;
+
+    // The refusal is spelled out as an answer with a shape, not left implicit —
+    // and the negative examples are what stop it reading as "reject anything
+    // short".
+    expect(prompt).toContain('{"classifiable": false, "skills": []}');
+    expect(prompt).toContain('"buy eggs" -> {"classifiable":false,"skills":[]}');
+    expect(prompt).toContain('"123145" -> {"classifiable":false,"skills":[]}');
+    // ...balanced by a terse title that IS a task, so brevity alone is not the
+    // signal to decline.
+    expect(prompt).toContain('"Fix the login button alignment on Safari"');
+  });
+
   it('requests JSON response mode with the skill set as the schema enum', async () => {
     const fetchMock = vi.fn(async () => geminiOk('{"skills":["Backend"]}'));
     vi.stubGlobal('fetch', fetchMock);
@@ -80,8 +100,25 @@ describe('callGemini (6.2, design §5.2)', () => {
     expect(generationConfig.temperature).toBe(0);
   });
 
+  it('makes `classifiable` a required, first-generated field (REQ-6.8)', async () => {
+    const fetchMock = vi.fn(async () => geminiOk('{"classifiable":true,"skills":["Backend"]}'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await callGemini('Add audit logging', config);
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const { responseSchema } = JSON.parse(init.body as string).generationConfig;
+
+    // Required, so the flag cannot be quietly omitted on the titles that need
+    // it; ordered first, so the model decides "is this a task" before emitting
+    // a skill name it would then have to contradict.
+    expect(responseSchema.properties.classifiable.type).toBe('BOOLEAN');
+    expect(responseSchema.required).toEqual(['classifiable', 'skills']);
+    expect(responseSchema.propertyOrdering).toEqual(['classifiable', 'skills']);
+  });
+
   it('sends the key as a header, never in the URL (REQ-6.7)', async () => {
-    const fetchMock = vi.fn(async () => geminiOk('{"skills":[]}'));
+    const fetchMock = vi.fn(async () => geminiOk('{"classifiable":false,"skills":[]}'));
     vi.stubGlobal('fetch', fetchMock);
 
     await callGemini('Anything', config);
@@ -92,10 +129,12 @@ describe('callGemini (6.2, design §5.2)', () => {
   });
 
   it('returns the candidate text unchanged', async () => {
-    vi.stubGlobal('fetch', async () => geminiOk('{"skills":["Frontend","Backend"]}'));
+    vi.stubGlobal('fetch', async () =>
+      geminiOk('{"classifiable":true,"skills":["Frontend","Backend"]}'),
+    );
 
     await expect(callGemini('Update profile page', config)).resolves.toBe(
-      '{"skills":["Frontend","Backend"]}',
+      '{"classifiable":true,"skills":["Frontend","Backend"]}',
     );
   });
 

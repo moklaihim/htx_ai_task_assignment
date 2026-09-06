@@ -440,6 +440,12 @@ body {
   background: var(--danger);
 }
 
+/* Neutral, deliberately not red: an `info` toast reports something that
+ * happened correctly (REQ-4.7). */
+.toast--info {
+  background: var(--accent);
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

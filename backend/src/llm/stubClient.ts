@@ -8,8 +8,8 @@
  * on an exhausted free tier (REQ-0.9).
  *
  * It returns the same thing `callGemini` returns — raw JSON text — rather than
- * ids, so both modes flow through the identical `parseSkillIds` gate. A stub
- * that returned ids directly would bypass the one piece of code that keeps
+ * ids, so both modes flow through the identical `parseSkillInference` gate. A
+ * stub that returned ids directly would bypass the one piece of code that keeps
  * invented skills out of the database, and the tests would then be exercising a
  * path production never takes.
  */
@@ -82,22 +82,30 @@ const BACKEND_MATCHERS = toMatchers(BACKEND_KEYWORDS);
 /**
  * Classifies `title` by keyword and returns it in Gemini's response format.
  *
- * A title with no signal either way falls back to **both** skills rather than
- * to none: an empty classification is a failure (design §5.3), and a stub whose
- * job is to exercise the success path must not manufacture failures — `fail`
- * mode is what tests use for those.
+ * A title matching both keyword sets (or neither side exclusively) gets both
+ * skills. A title matching **no** keyword at all comes back
+ * `{"classifiable": false, "skills": []}` — the stub's stand-in for REQ-6.8's
+ * "this isn't a software task I can classify".
+ *
+ * That last case used to return both skills, on the reasoning that an empty
+ * classification was a failure (design §5.3) and a stub must not manufacture
+ * failures. It no longer is one: "not classifiable" is a successful outcome
+ * with its own response field, so the honest answer for a title this matcher
+ * has nothing to say about is now expressible — and being able to reach that
+ * path deterministically, with no network and no API key, is what lets the
+ * integration and e2e suites cover it at all. Deliberate failures still come
+ * from `fail` mode, which is unchanged.
  */
 export async function callStub(title: string): Promise<string> {
   const haystack = title.toLowerCase();
   const frontend = matches(haystack, FRONTEND_MATCHERS);
   const backend = matches(haystack, BACKEND_MATCHERS);
 
-  const skills =
-    frontend && !backend
-      ? ['Frontend']
-      : backend && !frontend
-        ? ['Backend']
-        : ['Frontend', 'Backend'];
+  if (!frontend && !backend) {
+    return JSON.stringify({ classifiable: false, skills: [] });
+  }
 
-  return JSON.stringify({ skills });
+  const skills = frontend && !backend ? ['Frontend'] : backend && !frontend ? ['Backend'] : ['Frontend', 'Backend'];
+
+  return JSON.stringify({ classifiable: true, skills });
 }

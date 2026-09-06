@@ -26,16 +26,28 @@ import { buildPrompt, VALID_SKILL_NAMES } from './prompt.js';
  * it, a chatty ```json ...``` fence or a "Sure! Here are the skills" preamble
  * would be a perfectly ordinary response that the parser would then have to
  * reject.
+ *
+ * `classifiable` (REQ-6.8) is the schema's half of the two-question prompt: the
+ * title is a free-text field, so "buy eggs" and "123145" are ordinary inputs,
+ * and a schema offering only `skills` leaves a model no way to say "neither"
+ * except by picking one anyway. Making the flag **required** is what stops it
+ * being quietly dropped on the titles that need it most.
+ *
+ * `propertyOrdering` puts `classifiable` before `skills` in the generated JSON.
+ * Generation is left to right, so the model commits to "is this a task" before
+ * it has emitted a skill name it would then have to contradict.
  */
 const RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
+    classifiable: { type: Type.BOOLEAN },
     skills: {
       type: Type.ARRAY,
       items: { type: Type.STRING, enum: [...VALID_SKILL_NAMES] },
     },
   },
-  required: ['skills'],
+  required: ['classifiable', 'skills'],
+  propertyOrdering: ['classifiable', 'skills'],
 };
 
 /**
@@ -59,7 +71,7 @@ function createClient(config: LlmConfig, apiKey: string): GoogleGenAI {
 
 /**
  * Calls Gemini for one task title and returns the raw response text (expected
- * to be `{"skills":[...]}`).
+ * to be `{"classifiable":true,"skills":[...]}`).
  *
  * `temperature: 0` because classification wants the model's most likely answer
  * every time, not variety — two identical titles should not get different
@@ -94,8 +106,21 @@ export async function callGemini(title: string, config: LlmConfig = llmConfig): 
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
         temperature: 0,
+        thinkingConfig: { includeThoughts: true },
       },
     });
+    // Thought parts carry the model's reasoning and are marked `thought: true`
+    // (as opposed to `"thought" in part`, which is true for every part since
+    // the field is merely optional). They're logged only — `.text` below
+    // already excludes them from the JSON answer callers parse.
+    const parts = response.candidates?.[0]?.content?.parts ?? [];
+    const thought = parts
+      .filter((part) => part.thought === true)
+      .map((part) => part.text ?? '')
+      .join('');
+    if (thought) {
+      console.log(`llm: thought - ${thought}`);
+    }
     // `.text` concatenates the candidate's text parts, replacing the manual
     // `candidates[0].content.parts[0].text` walk this file used to do.
     text = response.text;

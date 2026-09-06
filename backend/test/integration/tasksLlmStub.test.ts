@@ -50,6 +50,22 @@ describe('POST /tasks with LLM_MODE=stub (6.8, REQ-6.1, REQ-6.2, REQ-6.3)', () =
     expect(status).toBe(201);
     expect(names(task)).toEqual(['Frontend']);
     expect(task.skillInferenceFailed).toBeUndefined();
+    // REQ-6.9 — and the response says *the LLM* chose them, which a populated
+    // `skills` array cannot say on its own (REQ-4.8).
+    expect(task.skillInferenceApplied).toBe(true);
+  });
+
+  it('does not mark skills the user supplied as inferred (REQ-6.9)', async () => {
+    const { task } = await post({
+      title: 'As a visitor, I want a responsive homepage',
+      skillIds: [1],
+      subtasks: [{ title: 'Add an audit log endpoint' }],
+    });
+
+    // The root never reached the LLM, so it carries no marker; only the subtask
+    // created with an empty list did.
+    expect(task.skillInferenceApplied).toBeUndefined();
+    expect(task.subtasks[0]!.skillInferenceApplied).toBe(true);
   });
 
   it('classifies a subtask from its OWN title, not its parent’s (assumption 7)', async () => {
@@ -102,7 +118,7 @@ describe('POST /tasks with LLM_MODE=stub (6.8, REQ-6.1, REQ-6.2, REQ-6.3)', () =
     expect(names(task.subtasks[0]!)).toEqual(['Backend', 'Frontend']);
   });
 
-  it('never returns the response-only flag on a GET (design §4.1)', async () => {
+  it('never returns the response-only flags on a GET (design §4.1)', async () => {
     const { task } = await post({ title: 'Style the login screen' });
 
     const res = await fetch(`${server.baseUrl}/tasks/${task.id}`);
@@ -110,6 +126,49 @@ describe('POST /tasks with LLM_MODE=stub (6.8, REQ-6.1, REQ-6.2, REQ-6.3)', () =
 
     expect(names(fetched)).toEqual(['Frontend']);
     expect('skillInferenceFailed' in fetched).toBe(false);
+    expect('skillInferenceUnclassifiable' in fetched).toBe(false);
+    expect('skillInferenceApplied' in fetched).toBe(false);
+  });
+
+  describe('a title the model cannot classify (REQ-6.8)', () => {
+    it('creates the task, flags it unclassifiable, and does NOT flag it failed', async () => {
+      // The whole point of the distinction: `skills` is empty here for the same
+      // reason it is empty under `LLM_MODE=fail`, but nothing went wrong, so
+      // the response must not say something did (REQ-4.7).
+      const { status, task } = await post({ title: 'buy eggs' });
+
+      expect(status).toBe(201);
+      expect(task.skills).toEqual([]);
+      expect(task.skillInferenceUnclassifiable).toBe(true);
+      expect(task.skillInferenceFailed).toBeUndefined();
+    });
+
+    it('mixes the two outcomes within one tree, per node', async () => {
+      const { task } = await post({
+        title: 'As a visitor, I want a responsive homepage',
+        subtasks: [{ title: '123145' }, { title: 'Add an audit log endpoint' }],
+      });
+
+      expect(names(task)).toEqual(['Frontend']);
+      expect(task.skillInferenceUnclassifiable).toBeUndefined();
+
+      expect(task.subtasks[0]!.skills).toEqual([]);
+      expect(task.subtasks[0]!.skillInferenceUnclassifiable).toBe(true);
+      expect(task.subtasks[0]!.skillInferenceApplied).toBeUndefined();
+
+      expect(names(task.subtasks[1]!)).toEqual(['Backend']);
+      expect(task.subtasks[1]!.skillInferenceUnclassifiable).toBeUndefined();
+      expect(task.subtasks[1]!.skillInferenceApplied).toBe(true);
+    });
+
+    it('is response-only, like the failure flag (design §4.1)', async () => {
+      const { task } = await post({ title: 'buy eggs' });
+
+      const res = await fetch(`${server.baseUrl}/tasks/${task.id}`);
+      const fetched = (await res.json()) as TaskNode;
+
+      expect('skillInferenceUnclassifiable' in fetched).toBe(false);
+    });
   });
 
   it('classifies a whole tree of unskilled nodes in one request', async () => {
@@ -125,5 +184,9 @@ describe('POST /tasks with LLM_MODE=stub (6.8, REQ-6.1, REQ-6.2, REQ-6.3)', () =
     expect(status).toBe(201);
     expect(task.subtasks.map(names)).toEqual([['Frontend'], ['Backend'], ['Backend']]);
     expect(task.subtasks.every((node) => node.skills.length > 0)).toBe(true);
+    // The root's own title carries no keyword for the stub to match, so it is
+    // the REQ-6.8 outcome rather than a failure — each node judged on its own
+    // title (assumption 7), including this one.
+    expect(task.skillInferenceUnclassifiable).toBe(true);
   });
 });

@@ -15,10 +15,10 @@ import { collectSkillIds } from '../services/collectSkillIds.js';
 import {
   collectNodesNeedingSkills,
   inferMissingSkills,
-  markInferenceFailures,
-  type InferenceFailure,
+  markInferenceOutcomes,
+  type InferenceOutcome,
 } from '../services/skillInference.js';
-import { inferSkillIds } from '../llm/inferSkills.js';
+import { inferSkills } from '../llm/inferSkills.js';
 import { developerCanBeAssigned } from '../services/developerCanBeAssigned.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { AppError } from '../errors/AppError.js';
@@ -86,29 +86,38 @@ tasksRouter.post(
     // Successful ids are written onto the nodes, so the insert path persists
     // them exactly as if the user had picked them (REQ-6.2).
     const nodesNeedingSkills = collectNodesNeedingSkills(root);
-    let failures: InferenceFailure[] = [];
+    let outcomes: InferenceOutcome[] = [];
     if (nodesNeedingSkills.length > 0) {
       const seededSkills = await getAllSkills(pool);
-      failures = await inferMissingSkills(nodesNeedingSkills, (title) =>
-        inferSkillIds(title, seededSkills),
+      outcomes = await inferMissingSkills(nodesNeedingSkills, (title) =>
+        inferSkills(title, seededSkills),
       );
     }
 
     // REQ-6.4 — a failure is logged and flagged, never thrown: an external API
     // being down must not stop someone recording a task. The reason is only
     // available here, so a reviewer who sees the toast can find out why from
-    // the container logs (design §5.3).
-    for (const failure of failures) {
-      console.warn(`llm: skill inference failed for "${failure.title}": ${failure.reason}`);
+    // the container logs (design §5.3). REQ-6.8's "not a software task" is
+    // logged at `info`, not `warn`: nothing went wrong, and logging it as a
+    // warning would train a reviewer to ignore the line that means something
+    // did.
+    for (const outcome of outcomes) {
+      if (outcome.kind === 'failed') {
+        console.warn(`llm: skill inference failed for "${outcome.title}": ${outcome.reason}`);
+      } else if (outcome.kind === 'unclassifiable') {
+        console.info(`llm: no skills inferred for "${outcome.title}": not a classifiable task`);
+      }
+      // `classified` is not logged: it is the expected outcome, and one line per
+      // inferred node would bury the two lines above that mean something.
     }
 
     const taskId = await insertTaskTree(pool, root);
     const rows = await getTaskTreeRows(pool, taskId);
     const [task] = buildForest(rows);
 
-    // REQ-6.6 — response-only marker, applied after the read so it never
-    // reaches the database (design §4.1).
-    markInferenceFailures(root, task!, failures);
+    // REQ-6.6, REQ-6.8, REQ-6.9 — response-only markers, applied after the read
+    // so they never reach the database (design §4.1).
+    markInferenceOutcomes(root, task!, outcomes);
 
     res.status(201).json(task);
   }),
