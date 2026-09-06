@@ -35,7 +35,7 @@ const LLM_MODES: readonly LlmMode[] = ['live', 'stub', 'fail'];
 
 const DEFAULTS = {
   baseUrl: 'https://generativelanguage.googleapis.com',
-  model: 'gemini-3.5-flash',
+  model: 'gemini-3.8-flash',
   timeoutMs: 10_000,
   mode: 'live' as LlmMode,
 };
