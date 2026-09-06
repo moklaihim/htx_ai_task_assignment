@@ -16,57 +16,44 @@ the HTX Software Engineering take-home test.
 
 ## Setup & Run
 
-Requirements: Docker and Docker Compose. Nothing else — no local Node.js, no local
-Postgres, no `npm install` on the host.
+Requirements: Docker and Docker Compose. Nothing else needed on the host.
 
 ```
 git clone <repo-url>
 cd htx_ai_task_assignment
-cp .env.example .env      # then paste the provided LLM_API_KEY into it
-docker compose up
+cp .env.example .env      # paste your Gemini API key into LLM_API_KEY
+docker compose up -d --build
 ```
 
-Open **http://localhost:3000**. The Task List Page shows four seeded developers
-(Alice, Bob, Carol, Dave) with no tasks yet — create one from "New Task".
+Open **http://localhost:3000**. Four developers (Alice, Bob, Carol, Dave) are
+seeded with no tasks yet — create one from "New Task".
 
-That's the entire setup. No database to create by hand, no migration command, no
-seed command, no build step: the backend's `entrypoint.sh` runs the migration
-runner, then the idempotent seed, then the server, in that order, every time the
-`backend` container starts (safe to repeat — a second `docker compose up` against
-the same volume is a no-op). Anything beyond the four commands above would be a
-defect.
+Migrations and seed data are applied automatically on every backend start — no
+manual DB setup, migration command, or seed command needed.
 
-**Changing the LLM key or mode later** — edit `.env` and run `docker compose up`
-again (no `--build`). The key and `LLM_MODE` are container *environment* values, not
-build arguments, so a new value takes effect on the next start with no rebuild and
-is never baked into an image layer.
+**Reset the database** — at any point later, if you want to wipe all data and
+start clean (e.g. after testing, or to re-seed from scratch), just run:
+```
+docker compose down -v
+docker compose up -d --build
+```
 
-**Health checks** (used by `depends_on: condition: service_healthy` and useful for
-debugging): `GET /health` returns 200 once the process is running; `GET /health/db`
-returns 200 only once it can run a query against Postgres, 503 otherwise.
+**Changed the LLM key or mode?** Edit `.env`, then `docker compose up -d` — no
+rebuild needed, since these are runtime env values, not build args.
 
 ### Environment variables
 
-Everything the app reads is listed in [`.env.example`](.env.example):
+Full list in [`.env.example`](.env.example). Only `LLM_API_KEY` is required —
+everything else has a working default. Without a key, the app still runs; skill
+inference just fails gracefully (empty Skills list + notification).
 
-| Variable | Required | Default | Meaning |
-|---|---|---|---|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | no | `app` / `app` / `taskdb` | Postgres credentials/database, shared with `DATABASE_URL` |
-| `DATABASE_URL` | no | `postgresql://app:app@db:5432/taskdb` | Backend's Postgres connection string (`db` is the compose service name) |
-| `DB_CONNECTION_TIMEOUT_MS` | no | `3000` | How long the backend waits for a pooled connection before `/health/db` reports 503 |
-| `FRONTEND_PORT` | no | `3000` | Host port the SPA is published on |
-| `LLM_BASE_URL` | no | `https://generativelanguage.googleapis.com` | Gemini API origin (the SDK's `httpOptions.baseUrl`) |
-| `LLM_MODEL` | no | `gemini-3.8-flash` | Gemini model id |
-| `LLM_TIMEOUT_MS` | no | `10000` | Per-call deadline before the LLM request is aborted |
-| `LLM_MODE` | no | `live` | `live` calls Gemini; `stub`/`fail` are test doubles (see [Testing](#testing)) |
-| `LLM_API_KEY` | **yes** | — | The only value with no committed default; never commit a real key |
-
-`LLM_API_KEY` is the one variable with no default — everything else ships with a
-committed, non-sensitive default so a reviewer never has to look them up. If it's
-missing or blank, the app still starts and runs normally; every skill-inference
-attempt simply fails and falls back to an empty Skills list with a notification
-(see REQ-6.4 in [`docs/requirements.md`](docs/requirements.md)), rather than the
-container refusing to start.
+| Variable | Default | Meaning |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://app:app@db:5432/taskdb` | Backend's Postgres connection |
+| `FRONTEND_PORT` | `3000` | Host port the SPA is published on |
+| `LLM_MODEL` | `gemini-3.8-flash` | Gemini model id |
+| `LLM_MODE` | `live` | `live`/`stub`/`fail` (see [Testing](#testing)) |
+| `LLM_API_KEY` | — | **Required.** Never commit a real key |
 
 ---
 
@@ -89,68 +76,40 @@ external HTTP dependency:
                                      └──────────────┘
 ```
 
-- **frontend** — a React SPA (Vite build), served at runtime by nginx. Client-side
-  routing (React Router) switches between the Task List Page and the Task Creation
-  Page with no full page reload. nginx also proxies `/api/*` to the backend,
-  stripping the prefix, so the browser never needs CORS configuration and the
-  backend never needs to know about the `/api` prefix.
-- **backend** — Express on Node.js/TypeScript. Thin routes in `src/routes/` parse
-  and validate the request (Zod) and call plain, unit-testable functions in
-  `src/services/` for the two rules that matter most: skill matching and the
-  recursive "Done" rule. `src/db/` holds raw SQL query functions against `pg`
-  directly — no ORM. `src/llm/` is the only thing that talks to Gemini, and it is
-  called only from the backend, never from the browser, which is also what keeps
-  the API key server-side.
-- **postgres** — the single source of truth. Schema and seed data are applied by a
-  small migration runner and an idempotent seed script, both triggered by the
-  backend's `entrypoint.sh` on every container start.
-- **Gemini (external)** — called once per Task/subtask node created with an empty
-  Skills list, to infer which of the two seeded skills (`Frontend`, `Backend`) the
-  title implies. A failure here never fails the request — the task is still
-  created, just with an empty Skills list and a flag noting inference failed.
+- **frontend** — React SPA (Vite build) served by nginx, which also proxies
+  `/api/*` to the backend so the browser never needs CORS config.
+- **backend** — Express/TypeScript. Routes validate input (Zod) and delegate to
+  services for the two key rules: skill matching and the recursive "Done" rule.
+  Raw SQL via `pg` — no ORM. Only the backend talks to Gemini, keeping the API
+  key server-side.
+- **postgres** — single source of truth. Schema and seed data are applied by a
+  migration runner and idempotent seed script on every container start.
+- **Gemini (external)** — called when a Task/subtask is created with no Skills
+  specified, to infer them from the title. A failure never blocks task creation.
 
 ### Repository layout
 
 ```
 /
 ├── docker-compose.yml
-├── .env.example              # committed template
-├── README.md
-├── docs/                     # requirements.md, design.md, phase-N.md
-├── e2e/                      # Playwright specs against the compose stack
-│   ├── playwright.config.ts
-│   ├── helpers/              # shared locators + Docker Compose LLM_MODE control
-│   └── specs/
+├── .env.example
+├── docs/                # requirements.md, design.md, phase-N.md
+├── e2e/                 # Playwright specs against the compose stack
 ├── backend/
-│   ├── Dockerfile             # multi-stage: compile, then a production-only runtime
-│   ├── entrypoint.sh           # CMD — migrate → seed → serve, every start
-│   ├── db/
-│   │   ├── migrations/        # 001_init.sql — plain SQL, applied in filename order
-│   │   ├── migrate.ts         # ~40-line runner
-│   │   ├── seed.sql           # idempotent seed data
-│   │   └── seed.ts
+│   ├── db/              # migrations/, migrate.ts, seed.sql, seed.ts
 │   ├── src/
-│   │   ├── index.ts           # process entry — reads PORT, calls listen()
-│   │   ├── app.ts              # createApp() — no listen(), so tests can bind their own port
-│   │   ├── db/                 # pg Pool + raw SQL query helpers
-│   │   ├── routes/             # HTTP layer: parse, validate, respond
-│   │   ├── schemas/            # Zod request schemas
-│   │   ├── services/           # skill matching, Done rule, tree building
-│   │   ├── errors/              # AppError — one factory per error code
-│   │   ├── middleware/          # errorHandler, asyncHandler
-│   │   ├── llm/                  # Gemini client, prompt, config, stub/fail doubles
-│   │   └── types/
-│   └── test/                    # unit/, integration/, helpers/
+│   │   ├── db/          # pg Pool + raw SQL query helpers
+│   │   ├── routes/      # HTTP layer: parse, validate, respond
+│   │   ├── schemas/     # Zod request schemas
+│   │   ├── services/    # skill matching, Done rule, tree building
+│   │   ├── llm/         # Gemini client, prompt, stub/fail doubles
+│   │   └── ...          # errors/, middleware/, types/
+│   └── test/            # unit/, integration/
 └── frontend/
-    ├── Dockerfile               # multi-stage: vite build, then nginx runtime
-    ├── nginx.conf                # serves the SPA, proxies /api, SPA fallback routing
     └── src/
-        ├── styles.css             # the whole design system: tokens + component classes
-        ├── api/                  # typed fetch wrappers, one file per resource
-        ├── types/                # hand-kept mirror of backend/src/types
-        ├── lib/                   # pure helpers (tree building, draft state)
-        ├── pages/                 # TaskListPage, TaskCreationPage
-        └── components/            # TaskRow, TaskFormNode (recursive), controls, Toaster
+        ├── api/         # typed fetch wrappers, one file per resource
+        ├── pages/       # TaskListPage, TaskCreationPage
+        └── components/  # TaskRow, TaskFormNode (recursive), controls, Toaster
 ```
 
 ### How the pieces interact
@@ -200,32 +159,22 @@ external HTTP dependency:
                                    └──────────┘
 ```
 
-- **`developers`** — id, name. Skills and assigned tasks are both many-to-many/
-  one-to-many relations expressed through the other tables, not columns here.
-- **`skills`** — id, unique name (seeded with exactly `Frontend` and `Backend`).
-  Not owned by a developer or a task; either can reference it.
+- **`developers`** — id, name. Skills and assigned tasks are relations expressed
+  through the other tables, not columns here.
+- **`skills`** — id, unique name (seeded with `Frontend` and `Backend`).
 - **`tasks`** — id, title, `status` (a Postgres `ENUM`: `To-do` / `In Progress` /
-  `Done`, so an invalid value is rejected by the database, not just the app),
-  nullable `assignee_id` (`ON DELETE SET NULL` — a task outlives a deleted
-  developer by becoming unassigned), and a nullable, self-referential
-  `parent_task_id` (`ON DELETE CASCADE` — deleting a task removes its whole
-  subtree). `NULL` means top-level; one column supports unlimited nesting depth
-  with no schema change per level. **Subtasks are rows in `tasks`, not a separate
-  table** — a subtask has every property a top-level task has, and one table gives
-  that for free instead of duplicating every column and every rule.
+  `Done`), nullable `assignee_id` (`ON DELETE SET NULL` — a task becomes
+  unassigned if its developer is deleted), and a nullable, self-referential
+  `parent_task_id` (`ON DELETE CASCADE` — deleting a task removes its subtree).
+  `NULL` means top-level; one column supports unlimited nesting depth.
+  **Subtasks are rows in `tasks`, not a separate table** — same columns, same
+  rules, no duplication.
 - **`developer_skills`** / **`task_skills`** — junction tables for the two
-  genuinely many-to-many relationships: a developer can have many skills and a
-  skill can belong to many developers; a task can require many skills and a skill
-  can be required by many tasks.
+  many-to-many relationships (developer↔skill, task↔skill).
 
-Cycles are impossible by construction: a task's parent is set only at creation,
-pointing at a row created earlier in the same tree, and no endpoint re-parents an
-existing task — so the graph can only ever be a tree, with no runtime cycle check
-needed.
-
-There is no `skill_inference_failed` column: that flag describes what happened
-during one `POST /tasks` request, not a stored property of the task, so it's
-returned in the response and then forgotten (see [API Reference](#api-reference)).
+Cycles in the `tasks` self-reference are impossible by construction: a task's
+`parent_task_id` is set only at creation and never changed afterward, so the
+task/subtask graph can only ever be a tree.
 
 ---
 
@@ -385,31 +334,24 @@ Docker. Everything below is a real choice, with the alternative that was rejecte
 
 | Choice | Why | Alternative rejected |
 |---|---|---|
-| **Express** | Mandated by the PDF. Minimal, stable, no framework conventions to explain. | — |
-| **`pg` (node-postgres), raw SQL** | Direct control over queries. The two hardest parts of this build — the recursive descendant check for the Done rule, and fetching an arbitrarily deep task tree — are both natural in SQL and awkward or impossible to express through an ORM's query API. Nothing sits between the code and the database. | Prisma / TypeORM — an extra abstraction to explain, and both would still need raw SQL escape hatches for the recursive queries |
+| **Express** | Express was chosen as the most established option, with minimal, well-known conventions for a project this size. | — |
+| **`pg` (node-postgres), raw SQL** | The most straightforward fit for this project's scale — a handful of queries, two of which (the recursive descendant check for the Done rule, and fetching an arbitrarily deep task tree) are natural in SQL. An ORM would add an abstraction layer nothing here needs. | — |
 | **Plain `.sql` migration files + a small runner** | Migrations are readable SQL applied in filename order, tracked in a `schema_migrations` table. About 40 lines of runner code, fully inspectable. | `node-pg-migrate` — a reasonable tool, but adds a dependency and its own CLI conventions for what is a handful of files here |
 | **Zod** | One schema validates the recursive `POST /tasks` body *and* infers the TypeScript type from it, so validation and types can't drift apart. Recursive schemas are directly supported, which matters for arbitrarily nested subtasks. | Hand-written validation — verbose, and easy to miss a nesting level |
 | **Vite** | Fast dev server, first-class TS + React templates, builds to static files nginx serves directly. | Create React App (no longer maintained) |
 | **React Router** | Client-side navigation between the two pages, satisfying the single-page-application requirement. | Conditional rendering on state — works, but no URLs, no back button |
 | **Vitest** | One test runner for both halves of the repo. On the frontend it reuses the existing Vite config, so TS handling and path aliases are already correct with no second build setup. On the backend it runs TypeScript tests with no separate transform step. | Jest — needs its own TS toolchain configured; `node:test` — no extra dependency, but a separate runner from the frontend's, so two ways of writing tests in one repo |
-| **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. | Cypress — comparable; Playwright chosen for simpler multi-browser setup and no separate dashboard concepts |
+| **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. | — |
 | **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, avoiding CORS configuration entirely. | Serving the SPA from Express (mixes concerns, loses static-file caching) |
 | **Gemini** | Free tier, following the PDF's own suggestion, for LLM skill inference. | — |
-| **`@google/genai` (official SDK)** | Owns the two details most likely to drift as the API versions — the request path and the response envelope shape. A hand-written `fetch` client had both hardcoded (`/v1beta/models/{model}:generateContent`, and a manual `candidates[0].content.parts[0].text` walk), making an API version bump a code change. Typed request/response and a `Type`-checked response schema come with it. | Hand-rolled `fetch` — what this replaced; fewer dependencies, but it put the API's versioning surface into our own code |
+| **`@google/genai` (official SDK)** | Simpler and more intuitive than a hand-rolled `fetch` client — typed request/response, and a `Type`-checked response schema that guarantees the shape of the model's answer instead of manually parsing it. | Hand-rolled `fetch` — works, but means writing and maintaining the request/response shapes by hand |
 
 **Not used: a CSS or component library.** The UI is two pages of tables, form
-fields and buttons — elements the platform already provides. A component library
-(MUI, Chakra) would add a design system, a theming layer and a peer-dependency
-tree to restyle them, and Tailwind would add a build step and put the same
-tokens in every `className` instead of one place. Instead, `frontend/src/styles.css`
-is a single stylesheet: a `:root` token block (palette, radius, type, shadows)
-and component classes that consume it, so the palette and spacing scale each
-have exactly one definition. Only layout that depends on runtime data — the
-indent of a subtask row by its tree depth — stays inline in the components.
-
-**Not used: Supertest.** Integration tests start the Express app in a setup hook
-and call it with Node's built-in global `fetch`. Supertest would only wrap that in
-a chainable assertion API — one more dependency for no capability the tests need.
+fields and buttons — a small enough surface that a component library (MUI,
+Chakra) or a utility framework (Tailwind) would add more setup and complexity
+than it saves. Plain CSS (`frontend/src/styles.css`) is a single stylesheet with
+a `:root` token block (palette, radius, type, shadows) and component classes
+that consume it.
 
 ---
 
@@ -473,7 +415,8 @@ reviewer can distinguish stated requirements from decisions made to fill them:
 5. **"Without specified Skill(s)"** is read as an empty Skills array at creation
    time — not `null`, not an omitted field.
 6. **LLM failure handling** — not specified by the PDF; a safe fallback is
-   defined (create with empty skills rather than fail the request).
+   defined (create with empty skills rather than fail the request), and the
+   user is shown a message informing them that inference failed.
 7. **Subtasks are treated as full Tasks in their own right** — same title field,
    same optional skills field, same LLM classification path. A subtask's required
    skills are inferred from *its own* title, standalone. A subtask never copies or
@@ -484,10 +427,6 @@ reviewer can distinguish stated requirements from decisions made to fill them:
    software task") rather than guess, and a declined title is reported to the user
    as information, not as a failure. See
    [Inference markers](#inference-markers-post-response-only).
-9. **Task List "..." column** — the PDF's Task List wireframe shows an unlabelled
-   "..." column between Skills and Status. This is read as an indication that
-   further task attributes *may* be displayed, not as a requirement for any
-   specific additional column. No extra column is implemented.
 
 Full requirement-by-requirement detail lives in
 [`docs/requirements.md`](docs/requirements.md); the reasoning behind every design
