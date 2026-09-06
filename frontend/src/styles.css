@@ -420,16 +420,42 @@ body {
 }
 
 .toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
   min-width: 240px;
   max-width: 360px;
-  padding: 0.6875rem 1rem;
+  padding: 0.6875rem 0.75rem 0.6875rem 1rem;
   border-radius: var(--radius);
   color: #ffffff;
   font-size: 0.875rem;
   line-height: 1.45;
   box-shadow: var(--shadow-float);
-  cursor: pointer;
   animation: toast-in 140ms ease-out;
+}
+
+.toast__message {
+  flex: 1;
+}
+
+.toast__close {
+  flex: none;
+  margin: -0.25rem -0.25rem 0 0;
+  padding: 0.125rem 0.375rem;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  opacity: 0.75;
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast__close:hover,
+.toast__close:focus-visible {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .toast--success {

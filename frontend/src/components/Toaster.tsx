@@ -80,9 +80,16 @@ export function Toaster() {
           className={`toast toast--${item.kind}`}
           data-testid="toast"
           data-kind={item.kind}
-          onClick={() => dismiss(item.id)}
         >
-          {item.message}
+          <span className="toast__message">{item.message}</span>
+          <button
+            type="button"
+            className="toast__close"
+            aria-label="Dismiss notification"
+            onClick={() => dismiss(item.id)}
+          >
+            ×
+          </button>
         </div>
       ))}
     </div>
