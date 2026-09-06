@@ -36,6 +36,13 @@ export interface TaskNode extends TaskRow {
    */
   skillInferenceFailed?: boolean;
   /**
+   * Present only in the `POST /tasks` response, and only when
+   * `skillInferenceFailed` is `true` — the reason the call failed (a timeout,
+   * a non-2xx status, an unusable response), shown to the user alongside the
+   * failure notice.
+   */
+  skillInferenceFailureReason?: string;
+  /**
    * Present only in the `POST /tasks` response. `true` means the LLM was
    * invoked and answered successfully that the title is not a software task
    * it can classify (`"buy eggs"`, `"123145"`). `skills` is `[]` because

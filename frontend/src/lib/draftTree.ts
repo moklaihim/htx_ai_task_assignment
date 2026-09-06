@@ -84,6 +84,18 @@ export function everyTitleFilled(node: DraftNode): boolean {
   return node.title.trim().length > 0 && node.subtasks.every(everyTitleFilled);
 }
 
+/**
+ * True when at least one node in the tree has no Skills selected.
+ *
+ * Mirrors the server's `collectNodesNeedingSkills`: it walks the whole tree
+ * and infers Skills for exactly the nodes whose `skillIds` is empty. When
+ * this returns `false`, `POST /tasks` makes no LLM call at all — so the page
+ * must not tell the user it is waiting on one.
+ */
+export function anyNodeNeedsSkills(node: DraftNode): boolean {
+  return node.skillIds.length === 0 || node.subtasks.some(anyNodeNeedsSkills);
+}
+
 /** Total node count, root included — used for the Save button's label. */
 export function countNodes(node: DraftNode): number {
   return 1 + node.subtasks.reduce((total, child) => total + countNodes(child), 0);

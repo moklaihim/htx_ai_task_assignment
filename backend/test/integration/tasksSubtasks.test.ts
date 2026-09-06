@@ -10,6 +10,8 @@ interface TaskDto {
   subtasks: TaskDto[];
   /** Present only on `POST /tasks` responses (design §4.1, REQ-6.6). */
   skillInferenceFailed?: boolean;
+  /** Present iff `skillInferenceFailed` is `true`. */
+  skillInferenceFailureReason?: string;
   /** Likewise, for the REQ-6.8 "not a software task" outcome. */
   skillInferenceUnclassifiable?: boolean;
   /** Likewise, for the REQ-6.9 "the LLM chose these skills" outcome. */
@@ -28,6 +30,7 @@ const BACKEND = 2;
 function withoutInferenceFlags(task: TaskDto): TaskDto {
   const {
     skillInferenceFailed: _failed,
+    skillInferenceFailureReason: _reason,
     skillInferenceUnclassifiable: _unclassifiable,
     skillInferenceApplied: _applied,
     ...rest

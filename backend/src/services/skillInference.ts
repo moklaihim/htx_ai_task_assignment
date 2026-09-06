@@ -131,6 +131,20 @@ const MARKER = {
   unclassifiable: 'skillInferenceUnclassifiable',
 } as const;
 
+const REASON_LOG_LIMIT = 300;
+
+/**
+ * Bounds `reason` before it goes into the response body. The LLM client
+ * already truncates its own messages for logging, but that cap (200 chars,
+ * design §5.2) is tuned for a one-line server log, not a client payload;
+ * this is a second, generous backstop so a future error path can't send an
+ * unbounded string to the browser. The frontend still truncates further for
+ * toast display — this limit is about payload size, not readability.
+ */
+function boundedReason(reason: string): string {
+  return reason.length > REASON_LOG_LIMIT ? `${reason.slice(0, REASON_LOG_LIMIT)}…` : reason;
+}
+
 /**
  * Copies the outcomes onto the response tree as `skillInferenceApplied`,
  * `skillInferenceFailed` or `skillInferenceUnclassifiable` (REQ-6.6, REQ-6.8,
@@ -157,11 +171,22 @@ export function markInferenceOutcomes(
 
   // A node appears in `outcomes` at most once, so one lookup suffices.
   const markerByNode = new Map(outcomes.map((outcome) => [outcome.node, MARKER[outcome.kind]]));
+  const reasonByNode = new Map(
+    outcomes
+      .filter((outcome): outcome is Extract<InferenceOutcome, { kind: 'failed' }> =>
+        outcome.kind === 'failed',
+      )
+      .map((outcome) => [outcome.node, outcome.reason]),
+  );
 
   const visit = (requestNode: CreateTaskRequest, responseNode: TaskNode) => {
     const marker = markerByNode.get(requestNode);
     if (marker !== undefined) {
       responseNode[marker] = true;
+    }
+    const reason = reasonByNode.get(requestNode);
+    if (reason !== undefined) {
+      responseNode.skillInferenceFailureReason = boundedReason(reason);
     }
 
     const pairs = Math.min(requestNode.subtasks.length, responseNode.subtasks.length);
