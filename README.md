@@ -330,21 +330,21 @@ for a failure, neutral slate for a title it declined to classify.
 ## Library Justifications
 
 Required by the source PDF, not chosen: TypeScript, React, Node.js, PostgreSQL,
-Docker. Everything below is a real choice, with the alternative that was rejected.
+Docker. Everything below is a real choice.
 
-| Choice | Why | Alternative rejected |
-|---|---|---|
-| **Express** | Express was chosen as the most established option, with minimal, well-known conventions for a project this size. | — |
-| **`pg` (node-postgres), raw SQL** | The most straightforward fit for this project's scale — a handful of queries, two of which (the recursive descendant check for the Done rule, and fetching an arbitrarily deep task tree) are natural in SQL. An ORM would add an abstraction layer nothing here needs. | — |
-| **Plain `.sql` migration files + a small runner** | Migrations are readable SQL applied in filename order, tracked in a `schema_migrations` table. About 40 lines of runner code, fully inspectable. | `node-pg-migrate` — a reasonable tool, but adds a dependency and its own CLI conventions for what is a handful of files here |
-| **Zod** | One schema validates the recursive `POST /tasks` body *and* infers the TypeScript type from it, so validation and types can't drift apart. Recursive schemas are directly supported, which matters for arbitrarily nested subtasks. | Hand-written validation — verbose, and easy to miss a nesting level |
-| **Vite** | Fast dev server, first-class TS + React templates, builds to static files nginx serves directly. | Create React App (no longer maintained) |
-| **React Router** | Client-side navigation between the two pages, satisfying the single-page-application requirement. | Conditional rendering on state — works, but no URLs, no back button |
-| **Vitest** | One test runner for both halves of the repo. On the frontend it reuses the existing Vite config, so TS handling and path aliases are already correct with no second build setup. On the backend it runs TypeScript tests with no separate transform step. | Jest — needs its own TS toolchain configured; `node:test` — no extra dependency, but a separate runner from the frontend's, so two ways of writing tests in one repo |
-| **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. | — |
-| **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, avoiding CORS configuration entirely. | Serving the SPA from Express (mixes concerns, loses static-file caching) |
-| **Gemini** | Free tier, following the PDF's own suggestion, for LLM skill inference. | — |
-| **`@google/genai` (official SDK)** | Simpler and more intuitive than a hand-rolled `fetch` client — typed request/response, and a `Type`-checked response schema that guarantees the shape of the model's answer instead of manually parsing it. | Hand-rolled `fetch` — works, but means writing and maintaining the request/response shapes by hand |
+| Choice | Why |
+|---|---|
+| **Express** | Express was chosen as the most established option, with minimal, well-known conventions for a project this size. |
+| **`pg` (node-postgres), raw SQL** | The most straightforward fit for this project's scale — a handful of queries, two of which (the recursive descendant check for the Done rule, and fetching an arbitrarily deep task tree) are natural in SQL. An ORM would add an abstraction layer nothing here needs. |
+| **Plain `.sql` migration files + a small runner** | Migrations are readable SQL applied in filename order, tracked in a `schema_migrations` table. About 40 lines of runner code, fully inspectable. |
+| **Zod** | One schema validates the recursive `POST /tasks` body *and* infers the TypeScript type from it, so validation and types can't drift apart. Recursive schemas are directly supported, which matters for arbitrarily nested subtasks. |
+| **Vite** | Fast dev server, first-class TS + React templates, builds to static files nginx serves directly. |
+| **React Router** | Client-side navigation between the two pages, satisfying the single-page-application requirement. |
+| **Vitest** | One test runner for both halves of the repo. On the frontend it reuses the existing Vite config, so TS handling and path aliases are already correct with no second build setup. On the backend it runs TypeScript tests with no separate transform step. |
+| **Playwright** | End-to-end coverage through a real browser against the running Docker Compose stack — the only way to verify things like "the Update button is disabled until the value changes". Runs the same way in CI or locally. |
+| **nginx (frontend runtime)** | Serves the built static bundle and proxies `/api` to the backend, avoiding CORS configuration entirely. |
+| **Gemini** | Free tier, following the PDF's own suggestion, for LLM skill inference. |
+| **`@google/genai` (official SDK)** | Simpler and more intuitive than a hand-rolled `fetch` client — typed request/response, and a `Type`-checked response schema that guarantees the shape of the model's answer instead of manually parsing it. |
 
 **Not used: a CSS or component library.** The UI is two pages of tables, form
 fields and buttons — a small enough surface that a component library (MUI,
