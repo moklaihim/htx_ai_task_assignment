@@ -7,15 +7,15 @@ import { setBackendLlmMode, resetBackendLlmMode } from '../helpers/composeEnv';
 const successToast = (page: Page) => page.locator('[data-testid="toast"][data-kind="success"]');
 
 /**
- * E2E-7, E2E-8 and E2E-9 (design §8.3, task 7.3). All three create a Task with an empty
- * Skills list, which is what triggers LLM inference (REQ-6.1) — the opposite
- * of every scenario in `taskFlows.spec.ts`, which always picks Skills
- * explicitly and so never reaches this path.
+ * E2E-7, E2E-8 and E2E-9. All three create a Task with an empty Skills list,
+ * which is what triggers LLM inference (REQ-6.1) — the opposite of every
+ * scenario in `taskFlows.spec.ts`, which always picks Skills explicitly and
+ * so never reaches this path.
  *
  * `LLM_MODE` is forced per scenario by recreating the `backend` container
  * (`helpers/composeEnv.ts`), never left as whatever `live` default `.env`
  * happens to hold — so this suite makes no live Gemini call and spends no
- * quota, regardless of what a reviewer has configured (task 7.3 acceptance).
+ * quota, regardless of what a reviewer has configured.
  */
 test.describe.serial('E2E-7, E2E-8 and E2E-9: LLM skill inference', () => {
   test.afterAll(async () => {
@@ -90,8 +90,8 @@ test.describe.serial('E2E-7, E2E-8 and E2E-9: LLM skill inference', () => {
     await expect(skillTags(page, title)).toHaveText('—');
 
     // REQ-4.7 — the distinction this scenario exists for: an `info` toast
-    // naming the cause, and *no* error toast, where the old build showed the
-    // REQ-4.6 failure notice for a correctly-classified non-task.
+    // naming the cause, and *no* error toast, for a correctly-classified
+    // non-task.
     const infoToast = page.getByTestId('toast').filter({ hasText: /No Skills detected/i });
     await expect(infoToast).toBeVisible();
     await expect(infoToast).toHaveAttribute('data-kind', 'info');

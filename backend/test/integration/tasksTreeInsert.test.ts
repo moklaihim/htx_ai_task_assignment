@@ -4,17 +4,14 @@ import { startTestServer, type TestServer } from '../helpers/testServer.js';
 /**
  * 5.2 acceptance: a failure mid-tree leaves zero rows.
  *
- * The failure is provoked below the root on purpose — a non-existent skill id
- * on a *grandchild*, which violates `task_skills.skill_id`'s foreign key only
- * after the root and the child have already been inserted. If the recursion
- * were not running inside one transaction on one client, those two earlier
- * rows would survive the error and the tree would be half-built.
+ * The failure is provoked on a *grandchild* — a non-existent skill id that
+ * violates the `task_skills` FK only after the root and child are already
+ * inserted, so only a working rollback can leave zero rows.
  *
- * `insertTaskTree` is called directly rather than through `POST /tasks`
- * because the route validates every skill id in the tree up front (5.2), so
- * this particular failure can never reach the database via HTTP. Bypassing
- * the route is the point: it tests that the transaction, not the validation,
- * is what guarantees the rollback.
+ * Calls `insertTaskTree` directly rather than through `POST /tasks`, since
+ * the route validates skill ids up front and this failure could never reach
+ * the database via HTTP — bypassing it tests the transaction, not the
+ * validation.
  */
 describe('insertTaskTree transaction (5.2, REQ-5.7)', () => {
   let server: TestServer;
@@ -79,11 +76,9 @@ describe('insertTaskTree transaction (5.2, REQ-5.7)', () => {
     );
     expect(rows).toEqual([]);
 
-    // Proof the failure really was *mid*-tree rather than before the first
-    // write: Postgres sequences are non-transactional, so `tasks_id_seq`
-    // still shows the three ids the rolled-back inserts consumed. Rows were
-    // written and then undone — the assertions above are not just passing
-    // because nothing was ever attempted.
+    // Proof the failure was mid-tree, not before the first write: Postgres
+    // sequences are non-transactional, so `tasks_id_seq` still shows the
+    // three ids the rolled-back inserts consumed.
     const seqAfter = await lastTaskId();
     expect(seqAfter).toBe(seqBefore + 3);
   });

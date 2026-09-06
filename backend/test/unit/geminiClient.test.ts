@@ -20,8 +20,7 @@ function geminiOk(text: string): Response {
 }
 
 /**
- * The SDK builds its request headers as a `Headers` instance rather than the
- * plain object the hand-written `fetch` call used to pass, so they are
+ * The SDK builds its request headers as a `Headers` instance, so they are
  * normalised before being asserted on.
  */
 function headersOf(init: RequestInit): Record<string, string> {

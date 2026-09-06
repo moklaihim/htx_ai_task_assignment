@@ -10,10 +10,10 @@ import {
 import { fillNodeTitle, checkNodeSkill, addSubtaskAtDepth } from '../helpers/taskForm';
 
 /**
- * E2E-1 through E2E-6 (design §8.3, task 7.2). Every scenario picks required
- * Skills explicitly in the Task Creation form, so none of these trigger LLM
- * inference (REQ-6.1 only fires on an *empty* Skills list) — that path is
- * covered separately by E2E-7/E2E-8 (task 7.3), where `LLM_MODE` matters.
+ * E2E-1 through E2E-6. Every scenario picks required Skills explicitly in the
+ * Task Creation form, so none of these trigger LLM inference (REQ-6.1 only
+ * fires on an *empty* Skills list) — that path is covered separately by
+ * E2E-7/E2E-8, where `LLM_MODE` matters.
  *
  * Run serially, in one describe block: E2E-2 through E2E-6 all operate on
  * Tasks created by E2E-1/E2E-5, so later scenarios depend on earlier ones

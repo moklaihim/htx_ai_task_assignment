@@ -3,8 +3,8 @@ import { AppError } from '../errors/AppError.js';
 
 /**
  * Wraps an async route handler so a rejected promise reaches Express's error
- * pipeline via `next(err)` instead of becoming an unhandled rejection. Express
- * 4 (used here — design §2) does not await handlers itself.
+ * pipeline via `next(err)` instead of becoming an unhandled rejection (Express
+ * does not await handlers itself).
  */
 export function asyncHandler<Req extends Request = Request>(
   fn: (req: Req, res: Response, next: NextFunction) => Promise<unknown>,
@@ -15,10 +15,9 @@ export function asyncHandler<Req extends Request = Request>(
 }
 
 /**
- * Central error handler (design §4.1): every route's failure — expected
- * (`AppError`) or not — is funneled through here so the response shape is
- * `{ error: { code, message } }` everywhere, never a framework-default HTML
- * page or an ad-hoc JSON body assembled per route.
+ * Central error handler: every failure — expected (`AppError`) or not — is
+ * funneled through here so the response shape is
+ * `{ error: { code, message } }` everywhere.
  *
  * Must be registered last, after every route, per Express's convention for
  * recognizing error-handling middleware by its four-argument arity.

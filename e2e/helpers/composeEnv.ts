@@ -4,19 +4,18 @@ import path from 'node:path';
 
 /**
  * Recreates the `backend` service with a specific `LLM_MODE` (design §5.4),
- * for the two scenarios that need it (task 7.3, E2E-7/E2E-8). `LLM_MODE` is
- * read once at process startup (`src/llm/config.ts`), so there is no way to
- * flip it on a running container — the container has to be recreated.
+ * for the scenarios that need it (E2E-7, E2E-8). `LLM_MODE` is read once at
+ * process startup (`src/llm/config.ts`), so there is no way to flip it on a
+ * running container — it has to be recreated.
  *
- * This is safe against the live compose stack for the same reason
- * `docker-compose restart backend` is (design §7.3): the entrypoint reruns
- * the idempotent migration and seed on every start, so recreating the
- * container touches neither the `db` volume's data nor the `frontend`
- * service, and any Tasks earlier specs created are still there afterward.
+ * Safe against the live compose stack for the same reason `docker-compose
+ * restart backend` is: the entrypoint reruns the idempotent migration and
+ * seed on every start, so recreating the container touches neither the `db`
+ * volume's data nor the `frontend` service.
  *
- * `--no-deps` is the reason this is quick and doesn't disturb `db`/`frontend`:
- * without it, `up` would also consider (and potentially recreate) the
- * services `backend` depends on.
+ * `--no-deps` is why this is quick and doesn't disturb `db`/`frontend`:
+ * without it, `up` would also consider recreating the services `backend`
+ * depends on.
  */
 const COMPOSE_FILE = path.resolve(fileURLToPath(import.meta.url), '../../../docker-compose.yml');
 

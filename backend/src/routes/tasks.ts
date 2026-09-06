@@ -60,7 +60,7 @@ tasksRouter.get(
 );
 
 // REQ-2.1, REQ-5.7 — the whole task/subtask tree, created in one request and
-// one transaction (design §4.5).
+// one transaction.
 tasksRouter.post(
   '/tasks',
   asyncHandler(async (req, res) => {
@@ -78,13 +78,10 @@ tasksRouter.post(
       throw AppError.validation(`Unknown skill id(s): ${missing.join(', ')}`);
     }
 
-    // REQ-6.1, REQ-6.2, REQ-6.3 — every node in the tree whose skills the user
-    // left empty is classified by the LLM, on the backend, with no user action.
-    // Deliberately **before** `insertTaskTree` opens its transaction (design
-    // §4.5): holding a transaction open across several calls to an external API
-    // would pin a database connection for as long as the slowest response takes.
-    // Successful ids are written onto the nodes, so the insert path persists
-    // them exactly as if the user had picked them (REQ-6.2).
+    // REQ-6.1, REQ-6.2, REQ-6.3 — nodes with no skills picked are classified by
+    // the LLM. Done before `insertTaskTree` opens its transaction, so a slow
+    // external API call doesn't pin a database connection. Successful ids are
+    // written onto the nodes and persisted like a user-picked skill.
     const nodesNeedingSkills = collectNodesNeedingSkills(root);
     let outcomes: InferenceOutcome[] = [];
     if (nodesNeedingSkills.length > 0) {
@@ -94,29 +91,24 @@ tasksRouter.post(
       );
     }
 
-    // REQ-6.4 — a failure is logged and flagged, never thrown: an external API
-    // being down must not stop someone recording a task. The reason is only
-    // available here, so a reviewer who sees the toast can find out why from
-    // the container logs (design §5.3). REQ-6.8's "not a software task" is
-    // logged at `info`, not `warn`: nothing went wrong, and logging it as a
-    // warning would train a reviewer to ignore the line that means something
-    // did.
+    // REQ-6.4 — inference failures are logged and flagged, never thrown: an
+    // external API being down must not stop someone recording a task.
+    // REQ-6.8's "not a software task" case is logged at `info`, not `warn`,
+    // since nothing went wrong.
     for (const outcome of outcomes) {
       if (outcome.kind === 'failed') {
         console.warn(`llm: skill inference failed for "${outcome.title}": ${outcome.reason}`);
       } else if (outcome.kind === 'unclassifiable') {
         console.info(`llm: no skills inferred for "${outcome.title}": not a classifiable task`);
       }
-      // `classified` is not logged: it is the expected outcome, and one line per
-      // inferred node would bury the two lines above that mean something.
     }
 
     const taskId = await insertTaskTree(pool, root);
     const rows = await getTaskTreeRows(pool, taskId);
     const [task] = buildForest(rows);
 
-    // REQ-6.6, REQ-6.8, REQ-6.9 — response-only markers, applied after the read
-    // so they never reach the database (design §4.1).
+    // REQ-6.6, REQ-6.8, REQ-6.9 — response-only markers, applied after the
+    // read so they never reach the database.
     markInferenceOutcomes(root, task!, outcomes);
 
     res.status(201).json(task);
@@ -175,8 +167,8 @@ tasksRouter.patch(
 );
 
 // REQ-2.5, REQ-5.3 — a change to `Done` is rejected while any descendant, at
-// any depth, is not `Done` (design §4.3). Other statuses skip the check
-// entirely: nothing prevents moving a parent back to `To-do`.
+// any depth, is not `Done`. Other statuses skip the check entirely: nothing
+// prevents moving a parent back to `To-do`.
 tasksRouter.patch(
   '/tasks/:id/status',
   asyncHandler(async (req, res) => {

@@ -1,12 +1,12 @@
 import type { Locator, Page } from '@playwright/test';
 
 /**
- * Locators scoped to a single `TaskFormNode` (design §6.3) by nesting depth.
- * Every helper here uses a direct-child (`>`) combinator to reach *that
- * node's own* title input / skill checkboxes / "Add Subtask" button — a plain
- * descendant selector would also match the same elements one level down,
- * since a child `TaskFormNode` is nested inside its parent's `<div>` in the
- * DOM (REQ-5.6: one recursive component, so every level has the same shape).
+ * Locators scoped to a single `TaskFormNode` by nesting depth. Every helper
+ * here uses a direct-child (`>`) combinator to reach *that node's own* title
+ * input / skill checkboxes / "Add Subtask" button — a plain descendant
+ * selector would also match the same elements one level down, since a child
+ * `TaskFormNode` nests inside its parent's `<div>` (REQ-5.6: one recursive
+ * component, so every level has the same shape).
  */
 export function formNodeAtDepth(page: Page, depth: number): Locator {
   return page.locator(`[data-testid="task-form-node"][data-depth="${depth}"]`);

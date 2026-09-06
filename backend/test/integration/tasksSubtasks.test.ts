@@ -106,13 +106,10 @@ describe('nested create and the recursive Done rule (5.6, REQ-0.9, REQ-2.1, REQ-
       expect(grandchild.subtasks).toEqual([]);
 
       // …and a fresh read agrees with it, so the nesting is stored, not just
-      // echoed back from the request body.
-      //
-      // Phase 6 note: the POST response additionally carries the response-only
-      // `skillInferenceFailed` marker (design §4.1) on nodes the LLM could not
-      // classify — under the test harness's default `fail` mode, "Child A" and
-      // "Child B". That field describes this request, not the stored task, so a
-      // GET must *not* have it and the comparison drops it.
+      // echoed back from the request body. The POST response also carries the
+      // response-only `skillInferenceFailed` marker on nodes the LLM couldn't
+      // classify (the harness's default `fail` mode marks "Child A" and
+      // "Child B"), which a GET must not have — hence dropping it here.
       expect(await get(root.id)).toEqual(withoutInferenceFlags(root));
     });
 

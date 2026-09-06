@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Task 7.1 — proves the Playwright setup can actually drive a browser against
- * the docker-compose stack (frontend → nginx → backend → Postgres) before any
- * of the real E2E-1..8 scenarios (7.2, 7.3) are written on top of it.
+ * Proves the Playwright setup can actually drive a browser against the
+ * docker-compose stack (frontend → nginx → backend → Postgres) before any of
+ * the real E2E-1..8 scenarios are written on top of it.
  */
 test('the SPA loads and both routes render client-side (REQ-0.7)', async ({ page }) => {
   await page.goto('/');

@@ -18,14 +18,11 @@ export interface DbTaskRow {
 
 /**
  * Maps a database row to the camelCase shape the services, routes and API
- * contract use (design §4.4). With no ORM nothing does this automatically, so
- * every query result passes through here and column naming stays confined to the
- * db/ layer.
+ * contract use (design §4.4). With no ORM, every query result passes through
+ * here so column naming stays confined to the db/ layer.
  *
- * `assignee_id`/`assignee_name` become a nested `assignee` object, or `null` when
- * the task is unassigned. `skills` defaults to `[]` — the query's COALESCE
- * already does that, but a query written without it must not produce `null`
- * where the contract promises an array.
+ * `assignee_id`/`assignee_name` become a nested `assignee` object, or `null`
+ * when the task is unassigned. `skills` defaults to `[]`.
  */
 export function toTaskRow(row: DbTaskRow): TaskRow {
   return {
@@ -42,11 +39,11 @@ export function toTaskRow(row: DbTaskRow): TaskRow {
 }
 
 /**
- * A developer row as returned by the query in `db/developers.ts` — one row per
- * developer, with `skills` and `assigned_tasks` each aggregated into a JSON
- * array by a correlated subquery rather than a join, since a developer has two
- * independent one-to-many relations (skills, assigned tasks) that a single
- * `GROUP BY`/join would cross-multiply against each other.
+ * A developer row as returned by the query in `db/developers.ts` — one row
+ * per developer, with `skills` and `assigned_tasks` each aggregated into a
+ * JSON array by a correlated subquery rather than a join, since a developer
+ * has two independent one-to-many relations that a single join would
+ * cross-multiply.
  */
 export interface DbDeveloperRow {
   id: number;

@@ -16,12 +16,11 @@ function flatten(nodes: TaskDto[]): TaskDto[] {
 /**
  * 5.3 acceptance: subtasks never appear twice in `GET /tasks`.
  *
- * The failure mode being guarded against is the obvious one: `SELECT * FROM
- * tasks` returns every row flat, so listing them directly would show each
- * subtask once standalone at the top level and once nested inside its parent
- * (design §4.1). The anchor term `parent_task_id IS NULL` is what prevents
- * that — descendants enter the result set only through the recursive term,
- * and `buildForest` puts each one inside its parent.
+ * Guards against the obvious failure mode: `SELECT * FROM tasks` returns
+ * every row flat, so listing them directly would show each subtask once at
+ * the top level and once nested under its parent. The `parent_task_id IS
+ * NULL` anchor prevents that — descendants enter only through the recursive
+ * term, and `buildForest` nests each one under its parent.
  */
 describe('GET /tasks roots-only, GET /tasks/:id as root (5.3, REQ-2.2, REQ-2.3)', () => {
   let server: TestServer;

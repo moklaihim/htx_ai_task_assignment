@@ -3,17 +3,15 @@ import type { TaskRow, TaskStatus } from '../types/task.js';
 import type { CreateTaskRequest } from '../schemas/task.js';
 import { toTaskRow, type DbTaskRow } from './mapping.js';
 
-// Shared by both queries below (design §4.4): given whichever set of root rows
-// the anchor term selects, walk `parent_task_id` down to full depth and fold
-// each task's skills into one JSON array with `json_agg … FILTER`, so a task
-// with none becomes `[]` rather than `[null]`.
+// Shared by both queries below: given whichever root rows the anchor term
+// selects, walk `parent_task_id` down to full depth and fold each task's
+// skills into one JSON array with `json_agg … FILTER`, so a task with none
+// becomes `[]` rather than `[null]`.
 //
-// `ORDER BY tree.id` is what makes the response deterministic: a recursive CTE
-// has no defined row order, and `buildForest` preserves whatever order it is
-// given, so without this a tree's subtasks could come back in a different
-// order on each request. Ordering by id means creation order — which for a
-// tree built by one depth-first `insertTaskTree` is the order the user typed
-// the nodes in.
+// `ORDER BY tree.id` makes the response deterministic — a recursive CTE has
+// no defined row order, and `buildForest` preserves whatever order it's
+// given. Ordering by id means creation order, which for a tree inserted
+// depth-first by `insertTaskTree` is the order the user typed the nodes in.
 const SELECT_TREE = `
   SELECT tree.id, tree.title, tree.status, tree.parent_task_id,
          d.id AS assignee_id, d.name AS assignee_name,
@@ -81,19 +79,16 @@ export async function updateTaskAssignee(
 }
 
 /**
- * How many descendants of `id`, at **any** depth, are not yet `Done`
- * (design §4.3, REQ-5.3). `> 0` means a status change to `Done` must be
- * rejected with `400 SUBTASKS_NOT_DONE`.
+ * How many descendants of `id`, at any depth, are not yet `Done` (REQ-5.3).
+ * `> 0` means a status change to `Done` must be rejected with
+ * `400 SUBTASKS_NOT_DONE`.
  *
- * The traversal happens in the database, in one recursive CTE and one round
- * trip regardless of depth or size — walking level by level in application
- * code would be one query per level. Checking only direct children would be
- * wrong: a child can be `Done` while its own child is not, so the anchor term
- * finds the children and the recursive term keeps joining grandchildren,
- * great-grandchildren and so on onto the rows already found.
+ * Runs in one recursive CTE / one round trip regardless of depth, checking
+ * all descendants rather than just direct children — a child can be `Done`
+ * while its own child isn't.
  *
- * Counts, rather than returning the offending rows, because the caller only
- * needs a yes/no — the count doubles as the number quoted in the message.
+ * Returns a count rather than the offending rows since the caller only needs
+ * yes/no, and the count doubles as the number quoted in the error message.
  */
 export async function countBlockingDescendants(pool: Pool, id: number): Promise<number> {
   const { rows } = await pool.query<{ blocking: number }>(
@@ -122,20 +117,19 @@ export async function updateTaskStatus(pool: Pool, id: number, status: TaskStatu
 }
 
 /**
- * Inserts a whole task/subtask tree in **one transaction on one pooled
- * client** (design §4.5, REQ-5.7), returning the root's new id. Callers
- * re-read the full tree via `getTaskTreeRows` to reuse the same mapping and
- * shape as every other endpoint.
+ * Inserts a whole task/subtask tree in one transaction on one pooled client
+ * (REQ-5.7), returning the root's new id. Callers re-read the full tree via
+ * `getTaskTreeRows` to reuse the same mapping and shape as every other
+ * endpoint.
  *
  * The single client matters: `BEGIN`/`COMMIT` are connection-scoped, so
- * issuing them via `pool.query` — which hands out an arbitrary connection per
- * call — would not form a transaction at all. Every statement below therefore
- * goes through `client`, never `pool`.
+ * issuing them via `pool.query` (which hands out an arbitrary connection per
+ * call) would not form a transaction at all — every statement below goes
+ * through `client`, never `pool`.
  *
- * Consequently a failure part-way through the tree (a bad skill id that
- * slipped past validation, a lost connection, a constraint violation on a
- * grandchild) rolls the whole thing back and leaves **zero** rows, rather
- * than a half-built tree the user never asked for.
+ * A failure part-way through the tree (a bad skill id, a lost connection, a
+ * constraint violation on a grandchild) rolls the whole thing back, leaving
+ * zero rows rather than a half-built tree.
  */
 export async function insertTaskTree(pool: Pool, root: CreateTaskRequest): Promise<number> {
   const client = await pool.connect();
@@ -153,14 +147,12 @@ export async function insertTaskTree(pool: Pool, root: CreateTaskRequest): Promi
 }
 
 /**
- * One node of the tree, depth-first: insert the task row, take the id
- * `RETURNING` hands back, write its `task_skills` rows, then recurse into
- * each child passing that id down as `parent_task_id` — which is what turns
- * the request's nesting into the self-referential rows REQ-1.10 describes.
+ * One node of the tree, depth-first: insert the task row, write its
+ * `task_skills` rows, then recurse into each child passing the new id down
+ * as `parent_task_id` (REQ-1.10).
  *
  * The awaits are sequential rather than `Promise.all`: a single `pg` client
- * is one connection and cannot run queries concurrently, and this is the same
- * client the surrounding transaction is open on.
+ * is one connection and cannot run queries concurrently.
  */
 async function insertTaskNode(
   client: PoolClient,
