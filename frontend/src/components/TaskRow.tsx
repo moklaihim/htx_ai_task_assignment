@@ -7,15 +7,15 @@ interface Props {
   task: TaskNode;
   developers: Developer[];
   onTaskUpdated: (updated: TaskNode) => void;
-  /** Outline number, e.g. `1`, `1.1`, `1.1.1` — matches the PDF wireframe. */
+  /** Outline number, e.g. `1`, `1.1`, `1.1.1`. */
   outline: string;
   depth?: number;
 }
 
 /**
- * One row per Task (REQ-3.1). Recursive — each subtask renders as a further
- * row nested under its parent, indented by depth, from this one component
- * definition at every level (design §6.2).
+ * One row per Task. Recursive — each subtask renders as a further row nested
+ * under its parent, indented by depth, from this one component definition at
+ * every level.
  *
  * Indentation alone is a weak cue in a flat `<table>`, where every row is a
  * sibling in the DOM whatever it is in the data. The outline number (`1.1.1`)
@@ -26,8 +26,7 @@ export function TaskRow({ task, developers, onTaskUpdated, outline, depth = 0 }:
   return (
     <>
       <tr data-testid="task-row" data-depth={depth} aria-level={depth + 1}>
-        {/* Indent is data-driven (tree depth), so it stays inline; everything
-            static about the cell lives in the stylesheet. */}
+        {/* Indent is data-driven (tree depth), so it stays inline. */}
         <td
           style={{ paddingLeft: `calc(1rem + ${depth * 1.5}rem)` }}
           data-testid="task-title"

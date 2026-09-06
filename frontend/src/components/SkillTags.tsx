@@ -1,6 +1,6 @@
 import type { Skill } from '../types';
 
-/** Renders a Task's required Skills as small pill tags (REQ-3.1). */
+/** Renders a Task's required Skills as small pill tags. */
 export function SkillTags({ skills }: { skills: Skill[] }) {
   if (skills.length === 0) {
     return <span className="skill-tags--empty">—</span>;

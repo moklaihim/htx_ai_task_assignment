@@ -3,9 +3,8 @@ import { TaskListPage } from './pages/TaskListPage';
 import { TaskCreationPage } from './pages/TaskCreationPage';
 import { Toaster } from './components/Toaster';
 
-// React Router mounts both pages client-side under one document (REQ-0.7,
-// design §6.1) — clicking between them is a DOM update, not a browser
-// navigation, which is what makes this an SPA rather than two HTML pages.
+// React Router mounts both pages client-side under one document — clicking
+// between them is a DOM update, not a browser navigation.
 export default function App() {
   return (
     <>

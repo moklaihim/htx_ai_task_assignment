@@ -12,25 +12,16 @@ interface Props {
 
 /**
  * One form node — the top-level Task and every nested subtask, at every
- * depth, rendered by this single component definition invoked recursively
- * (REQ-5.6, design §6.3). There is deliberately no `TaskFormLevel2`: adding a
- * fourth or tenth level needs no new code, only more recursion.
- *
- * `depth` drives indentation only — it changes no behavior and has no maximum
- * (REQ-5.4). The indent itself is one step per nested level, applied by the
- * stylesheet to `[data-depth]`; because the nodes are nested in the DOM the
- * steps already accumulate, and the page scrolls a deep tree horizontally
- * inside its panel rather than letting it run off the page.
+ * depth, rendered by this single component invoked recursively. `depth` only
+ * drives indentation and has no maximum.
  *
  * Edits travel back up one level at a time: a child hands its updated self to
- * this node, which folds it in with `replaceChild` and hands *itself* up. By
- * the time the page's `setState` runs it has received a whole new root, so
- * the tree stays immutable and React re-renders correctly.
+ * this node, which folds it in with `replaceChild` and hands *itself* up, so
+ * the tree stays immutable.
  *
  * `onAddSubtask` is passed straight through rather than wrapped, because it
  * addresses a node by `localId` against the whole tree (`addSubtaskTo`) — the
- * button on a grandchild must add to that grandchild, not to whichever node
- * happens to be handling the callback (REQ-5.5).
+ * button on a grandchild must add to that grandchild.
  */
 export function TaskFormNode({ node, skills, onChange, onAddSubtask, depth = 0 }: Props) {
   const label = depth === 0 ? 'Task' : 'Subtask';
@@ -45,10 +36,8 @@ export function TaskFormNode({ node, skills, onChange, onAddSubtask, depth = 0 }
       <label>
         <span className="field-label">
           {label}
-          {/* The title is the one field the form cannot save without, so it
-            * carries the conventional asterisk. `aria-hidden` because the
-            * input's own `required` already announces it to screen readers —
-            * without it the field reads as "Subtask star, required". */}
+          {/* aria-hidden: the input's own `required` already announces this
+            * to screen readers. */}
           <span className="field-label__required" aria-hidden="true">
             *
           </span>

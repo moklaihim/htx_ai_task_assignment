@@ -17,19 +17,17 @@ import {
 import type { Skill } from '../types';
 
 /**
- * The Task Creation Page (REQ-4.1, extended by REQ-5.4–5.7). No assignee
- * field (REQ-4.4 — assignment happens later, from the Task List Page). On
- * success, navigate back to the list (REQ-4.5).
+ * The Task Creation Page. No assignee field — assignment happens later, from
+ * the Task List Page. On success, navigate back to the list.
  *
  * The whole draft tree lives in **one** `useState` object shaped like the
- * `POST /tasks` body (design §6.3), so submitting is a single serialization
- * of a single value — one `POST` for the entire tree, however deep, rather
- * than one request per node (REQ-5.7).
+ * `POST /tasks` body, so submitting is a single serialization of a single
+ * value — one `POST` for the entire tree, however deep, rather than one
+ * request per node.
  *
  * Both callbacks rebuild from the root: `onChange` receives an already-folded
  * new root from `TaskFormNode`, and `onAddSubtask` runs `addSubtaskTo` over
- * the tree to reach the node whose button was clicked, at whatever depth
- * (REQ-5.5).
+ * the tree to reach the node whose button was clicked, at whatever depth.
  */
 export function TaskCreationPage() {
   const navigate = useNavigate();
@@ -61,52 +59,34 @@ export function TaskCreationPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      // One request, whole tree — `toCreateTaskInput` only strips `localId`,
-      // because the draft shape already matches the API's body shape.
+      // `toCreateTaskInput` only strips `localId` — the draft shape already
+      // matches the API's body shape.
       const created = await createTask(toCreateTaskInput(tree));
       const saved = countNodes(tree);
       toast.success(saved === 1 ? `Created "${tree.title.trim()}"` : `Created ${saved} tasks`);
 
-      // All three notices are purely informational: the tasks are already saved
-      // (REQ-6.4), so none blocks or rolls back the save, and the navigation
-      // below happens either way. Toasts rather than a dialog for exactly that
-      // reason — there is no decision for the user to make here, only something
-      // to know.
-      //
-      // One toast per *outcome*, not per task: a five-node tree with a mixed
-      // result raises at most three, and each names the tasks it covers.
-      // Colour carries the distinction before the text is even read — green
+      // All three notices are purely informational: the tasks are already
+      // saved, so none blocks or rolls back the save. One toast per
+      // *outcome*, not per task — colour carries the distinction: green
       // worked, slate is neutral information, red is broken.
       const notices = collectInferenceNotices(created);
-      
-      // REQ-4.8 — the LLM chose these Skills. Worth saying out loud: inference
-      // is invisible otherwise, since the user submitted the form with the
-      // Skills list empty and lands on a page where the row simply has skills.
-      // Naming them also makes a wrong guess correctable rather than unnoticed.
+
+      // The LLM chose these Skills — worth saying out loud, since the user
+      // submitted the form with the Skills list empty.
       if (notices.classified.length > 0) {
         toast.success(describeClassified(notices.classified));
       }
 
-      // REQ-4.6 — the LLM call itself went wrong for these nodes.
-      //
-      // Both this and the REQ-4.7 notice below state the outcome and stop. An
-      // earlier draft suggested adding the Skills afterwards, which this app
-      // cannot do: a Task's title and Skills are fixed at creation (the only
-      // mutations are `PATCH /assign` and `PATCH /status`), so the sole remedy
-      // is to create the Task again. Telling someone to do something the UI
-      // does not offer is worse than telling them nothing.
+      // The LLM call itself went wrong for these nodes. The only remedy is
+      // to create the Task again — Skills can't be added after the fact.
       if (notices.failed.length > 0) {
         toast.error(
           `Automatic skill detection failed for ${describeTitles(notices.failed)}. Saved with no Skills.`,
         );
       }
 
-      // REQ-4.7 — the LLM worked and reported that these titles are not
-      // software tasks it can classify (REQ-6.8). An `info` toast, not an
-      // error: nothing failed, and dressing a correct answer up as a failure is
-      // what sent users looking for a bug that wasn't there. The wording names
-      // the actual cause — the title, not the system — which is the part the
-      // user can act on next time.
+      // The LLM worked and reported that these titles are not software
+      // tasks it can classify. An `info` toast, not an error: nothing failed.
       if (notices.unclassifiable.length > 0) {
         toast.info(
           `No Skills detected for ${describeTitles(notices.unclassifiable)} — the title doesn't describe a software task. Saved with no Skills.`,
@@ -128,10 +108,7 @@ export function TaskCreationPage() {
       <h1 className="page__title">Create Task(s)</h1>
       <form onSubmit={handleSubmit} className="panel panel--padded">
         {/* A deep tree indents further than any viewport is wide, so the
-          * nodes scroll horizontally inside the panel. Without this the form
-          * grew past the panel's right edge and out over the page background
-          * — the fields were unreachable and the white surface stopped short
-          * of them. */}
+          * nodes scroll horizontally inside the panel. */}
         <div className="task-form-scroll">
           {skills && (
             <TaskFormNode
@@ -159,11 +136,10 @@ export function TaskCreationPage() {
 }
 
 /**
- * The REQ-4.8 confirmation. A single task names its Skills (`Frontend and
- * Backend for "Build the login form"`), because that is the whole content of
- * the message and it fits; several tasks name only the titles, since one line
- * per task is what turns a toast into a wall of text. `describeTitles` handles
- * the capping either way.
+ * A single task names its Skills (`Frontend and Backend for "Build the login
+ * form"`); several tasks name only the titles, since one line per task is
+ * what turns a toast into a wall of text. `describeTitles` handles the
+ * capping either way.
  */
 function describeClassified(classified: ClassifiedTask[]): string {
   const titles = classified.map((task) => task.title);
@@ -180,10 +156,9 @@ function joinWords(words: string[]): string {
 }
 
 /**
- * Names the affected tasks in the REQ-4.6 / REQ-4.7 / REQ-4.8 notifications,
- * quoted so a title reads as a title. A long tree could flag many nodes, so the
- * list is capped — a toast that grows to fill the screen stops being non-modal
- * in practice.
+ * Names the affected tasks in a notification, quoted so a title reads as a
+ * title. A long tree could flag many nodes, so the list is capped — a toast
+ * that grows to fill the screen stops being non-modal in practice.
  */
 function describeTitles(titles: string[]): string {
   const shown = titles.slice(0, 3).map((title) => `"${title}"`);

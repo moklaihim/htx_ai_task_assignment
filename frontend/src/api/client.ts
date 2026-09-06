@@ -1,10 +1,8 @@
 import type { ErrorResponse } from '../types';
 
 /**
- * Thrown by every wrapper in `src/api/` on a non-2xx response (design §4.1's
- * error shape). `code` lets a caller branch on failure type; `message` is
- * what gets shown to the user, e.g. in the toast the Update-button pattern
- * shows on a 400 (design §6.4, REQ-3.4).
+ * Thrown by every wrapper in `src/api/` on a non-2xx response. `code` lets a
+ * caller branch on failure type; `message` is what gets shown to the user.
  */
 export class ApiError extends Error {
   readonly status: number;
@@ -19,10 +17,9 @@ export class ApiError extends Error {
 }
 
 /**
- * Shared `fetch` wrapper (design §6.5: plain `fetch` behind typed wrappers,
- * no data-fetching library). Every backend route responds under `/api` via
- * the nginx proxy in production and the Vite dev-server proxy locally (see
- * `vite.config.ts`, `nginx.conf`), so callers pass paths like `/tasks`.
+ * Shared `fetch` wrapper. Every backend route responds under `/api` via the
+ * nginx proxy in production and the Vite dev-server proxy locally, so callers
+ * pass paths like `/tasks`.
  */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {

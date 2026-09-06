@@ -6,9 +6,11 @@ import { TaskTable } from '../components/TaskTable';
 import { replaceTaskInTree } from '../lib/taskTree';
 import type { Developer, TaskNode } from '../types';
 
-/** The Task List Page (REQ-3.1) — fetches every Task from `GET /tasks` and
- * every Developer from `GET /developers` (for the assignee dropdowns), and
- * renders them in a table matching the PDF wireframe. */
+/**
+ * The Task List Page — fetches every Task from `GET /tasks` and every
+ * Developer from `GET /developers` (for the assignee dropdowns), and renders
+ * them in a table.
+ */
 export function TaskListPage() {
   const [tasks, setTasks] = useState<TaskNode[] | null>(null);
   const [developers, setDevelopers] = useState<Developer[] | null>(null);

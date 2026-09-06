@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 
 /**
- * `info` is the neutral third kind (REQ-4.7): something the user should know
- * that is not a success and not a failure — an LLM that correctly declined to
- * classify a title being the case that motivated it. Styling it as an error
- * would report a working system as a broken one.
+ * `info` is the neutral third kind: something the user should know that is
+ * not a success and not a failure — e.g. an LLM that correctly declined to
+ * classify a title. Styling it as an error would report a working system as
+ * a broken one.
  */
 type ToastKind = 'success' | 'error' | 'info';
 interface ToastItem {
@@ -18,9 +18,7 @@ type Listener = (toasts: ToastItem[]) => void;
 const AUTO_DISMISS_MS = 14000;
 
 // Module-level store rather than React context: any component can call
-// `toast.success`/`toast.error` without being wrapped in a provider, matching
-// the component tree in design §6.2 where `Toaster` is a plain sibling of the
-// pages, not a wrapper around them.
+// `toast.success`/`toast.error` without being wrapped in a provider.
 let toasts: ToastItem[] = [];
 let nextId = 0;
 const listeners = new Set<Listener>();
@@ -41,12 +39,7 @@ function push(kind: ToastKind, message: string) {
   setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
 }
 
-/**
- * Imperative API for raising a toast from anywhere (design §6.2). This task
- * (4.3) builds the mechanism only, with no message wired to it yet — the
- * assignee/status controls (4.5–4.7) and the phase-6 LLM failure notice
- * (REQ-4.6) are the callers.
- */
+/** Imperative API for raising a toast from anywhere. */
 export const toast = {
   success: (message: string) => push('success', message),
   error: (message: string) => push('error', message),
@@ -54,9 +47,8 @@ export const toast = {
 };
 
 /**
- * Non-modal (fixed-position overlay, doesn't block the page), auto-dismissing
- * (task 4.3 acceptance), stacking (renders every active toast) notification
- * surface. Mount once at the app root.
+ * Non-modal, auto-dismissing, stacking notification surface. Mount once at
+ * the app root.
  */
 export function Toaster() {
   const [items, setItems] = useState<ToastItem[]>(toasts);

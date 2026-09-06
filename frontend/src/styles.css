@@ -1,11 +1,6 @@
 /*
  * Slate Minimal — the app's only stylesheet.
  *
- * Hand-written CSS rather than a component library (see README, "Library
- * Justifications"): the UI is two pages of tables, form fields and buttons,
- * which the platform already provides — a component library would ship a
- * design system, a theming layer and a peer-dependency tree to restyle them.
- *
  * Everything below is driven by the tokens in `:root`, so the palette, the
  * corner radius and the type scale each have exactly one definition. Layout
  * lives here in full — including the subtask indent, which the components
@@ -501,7 +496,7 @@ body {
 }
 
 /* Neutral, deliberately not red: an `info` toast reports something that
- * happened correctly (REQ-4.7). */
+ * happened correctly. */
 .toast--info {
   background: var(--accent);
 }

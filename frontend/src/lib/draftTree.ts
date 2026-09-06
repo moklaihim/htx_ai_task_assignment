@@ -1,9 +1,9 @@
 import type { CreateTaskInput } from '../types';
 
 /**
- * One node of the Task Creation Page's draft tree (design §6.3). Mirrors the
- * `POST /tasks` body shape so submitting is a direct serialization with no
- * transformation, plus one client-only field.
+ * One node of the Task Creation Page's draft tree. Mirrors the `POST /tasks`
+ * body shape so submitting is a direct serialization with no transformation,
+ * plus one client-only field.
  */
 export interface DraftNode {
   /**
@@ -41,12 +41,9 @@ export function emptyNode(): DraftNode {
 
 /**
  * Appends a blank subtask to the node with `targetId`, wherever it sits in
- * the tree (REQ-5.5). Immutable throughout: every node on the path back to
- * the root is rebuilt, so React sees new object identities and re-renders,
- * while untouched branches keep theirs and don't.
- *
- * The recursion is the whole point — appending to the root's `subtasks`
- * instead would turn the wireframe's nesting into a flat list.
+ * the tree. Immutable throughout: every node on the path back to the root is
+ * rebuilt, so React sees new object identities and re-renders, while
+ * untouched branches keep theirs and don't.
  */
 export function addSubtaskTo(node: DraftNode, targetId: string): DraftNode {
   if (node.localId === targetId) {
@@ -59,7 +56,7 @@ export function addSubtaskTo(node: DraftNode, targetId: string): DraftNode {
  * Replaces one direct child by `localId`, returning a new parent. Used by
  * `TaskFormNode` to lift a child's edit one level up: each level rebuilds
  * only itself, and the change propagates to the page's state one hop at a
- * time (design §6.3).
+ * time.
  */
 export function replaceChild(node: DraftNode, updated: DraftNode): DraftNode {
   return {
@@ -70,8 +67,8 @@ export function replaceChild(node: DraftNode, updated: DraftNode): DraftNode {
 
 /**
  * Strips `localId` from the whole tree, leaving exactly the recursive
- * `POST /tasks` body (REQ-5.7). Titles are trimmed because the server's Zod
- * schema trims too — sending the raw value would let a title that is only
+ * `POST /tasks` body. Titles are trimmed because the server's Zod schema
+ * trims too — sending the raw value would let a title that is only
  * whitespace pass the page's own check and then be rejected by the API.
  */
 export function toCreateTaskInput(node: DraftNode): CreateTaskInput {

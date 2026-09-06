@@ -14,8 +14,7 @@ interface Props {
 const UNASSIGNED = '';
 
 /**
- * Dropdown + Update button pair, one per Task row (REQ-3.2). Follows the
- * three-state Update-button pattern (design §6.4):
+ * Dropdown + Update button pair, one per Task row.
  *
  * | dropdown value vs. saved | dropdown | button |
  * |---|---|---|
@@ -24,8 +23,7 @@ const UNASSIGNED = '';
  * | request in flight | disabled | disabled, "Saving…" |
  *
  * The dropdown only lists developers who possess every Skill the Task
- * requires (REQ-3.3), using the same superset rule the server enforces
- * (design §4.2) — the server still re-checks regardless.
+ * requires; the server still re-checks regardless.
  */
 export function AssigneeControl({ task, developers, onTaskUpdated }: Props) {
   const [selected, setSelected] = useState<number | null>(task.assignee?.id ?? null);
@@ -50,8 +48,8 @@ export function AssigneeControl({ task, developers, onTaskUpdated }: Props) {
       const name = updated.assignee?.name ?? 'Unassigned';
       toast.success(`${task.title}: assignee updated to ${name}`);
     } catch (err) {
-      // REQ-3.4: the UI never shows a value the server rejected — revert the
-      // dropdown to the last saved value and surface the server's message.
+      // The UI never shows a value the server rejected — revert the dropdown
+      // to the last saved value and surface the server's message.
       setSelected(savedId);
       toast.error(err instanceof ApiError ? err.message : 'Failed to update assignee');
     } finally {

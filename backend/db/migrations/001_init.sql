@@ -1,6 +1,6 @@
--- 001_init.sql — initial schema (design §3.2).
--- Status is a Postgres ENUM so the database itself rejects anything outside the
--- three values REQ-1.6 fixes, rather than trusting the application layer.
+-- 001_init.sql — initial schema.
+-- Status is a Postgres ENUM so the database itself rejects anything outside
+-- the three fixed values, rather than trusting the application layer.
 CREATE TYPE task_status AS ENUM ('To-do', 'In Progress', 'Done');
 
 CREATE TABLE developers (

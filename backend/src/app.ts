@@ -15,8 +15,8 @@ export function createApp(): Express {
   app.use(developersRouter);
   app.use(tasksRouter);
 
-  // Any path not matched by a route above (design §4.1: consistent error shape
-  // across all routes, not just ones that reach a handler).
+  // Any path not matched by a route above, so unmatched routes get the same
+  // error shape as everything else.
   app.use((req, _res, next) => {
     next(AppError.notFound(`No route for ${req.method} ${req.path}`));
   });
