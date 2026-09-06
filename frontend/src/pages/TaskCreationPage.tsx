@@ -8,6 +8,7 @@ import { TaskFormNode } from '../components/TaskFormNode';
 import { collectInferenceNotices, type ClassifiedTask, type FailedTask } from '../lib/taskTree';
 import {
   addSubtaskTo,
+  anyNodeNeedsSkills,
   countNodes,
   emptyNode,
   everyTitleFilled,
@@ -107,22 +108,37 @@ export function TaskCreationPage() {
 
   const total = countNodes(tree);
 
+  // Only a save that is actually waiting on the LLM gets the explanatory
+  // hint. With Skills filled in on every node the server does no inference,
+  // the save is a plain insert, and claiming otherwise would explain a delay
+  // that isn't there. Safe to derive from `tree` rather than latch at submit
+  // time: the fieldset below is disabled while `saving`, so the tree cannot
+  // change mid-request.
+  const inferringSkills = saving && anyNodeNeedsSkills(tree);
+
   return (
     <main className="page">
       <h1 className="page__title">Create Task(s)</h1>
-      <form onSubmit={handleSubmit} className="panel panel--padded">
-        {/* A deep tree indents further than any viewport is wide, so the
-          * nodes scroll horizontally inside the panel. */}
-        <div className="task-form-scroll">
-          {skills && (
-            <TaskFormNode
-              node={tree}
-              skills={skills}
-              onChange={setTree}
-              onAddSubtask={(localId) => setTree((current) => addSubtaskTo(current, localId))}
-            />
-          )}
-        </div>
+      <form onSubmit={handleSubmit} className="panel panel--padded" aria-busy={saving}>
+        {/* One `disabled` fieldset freezes the entire draft tree while the
+          * request is in flight: every control below is a native `input` or
+          * `button`, so they all inherit it at any depth. The values are
+          * already serialized and sent — editing them here would change the
+          * form without changing what gets saved. */}
+        <fieldset className="form-fields" disabled={saving}>
+          {/* A deep tree indents further than any viewport is wide, so the
+            * nodes scroll horizontally inside the panel. */}
+          <div className="task-form-scroll">
+            {skills && (
+              <TaskFormNode
+                node={tree}
+                skills={skills}
+                onChange={setTree}
+                onAddSubtask={(localId) => setTree((current) => addSubtaskTo(current, localId))}
+              />
+            )}
+          </div>
+        </fieldset>
 
         <div className="form-actions">
           <button
@@ -133,6 +149,18 @@ export function TaskCreationPage() {
           >
             {saving ? 'Saving…' : total === 1 ? 'Save' : `Save ${total} tasks`}
           </button>
+
+          {/* When a node was left without Skills, `POST /tasks` runs the LLM
+            * inference before it answers, so the save is seconds rather than
+            * milliseconds. Naming the cause next to the button is what
+            * separates a slow save from a stuck one. `role="status"`
+            * announces it when it appears. */}
+          {inferringSkills && (
+            <p className="form-actions__hint" role="status" data-testid="saving-hint">
+              <span className="spinner" aria-hidden="true" />
+              Detecting Skills with AI — this can take a few seconds.
+            </p>
+          )}
         </div>
       </form>
     </main>
